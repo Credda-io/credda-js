@@ -1,0 +1,66 @@
+{
+  "name": "@credda/js",
+  "version": "0.6.1",
+  "description": "Credda client SDK for React + Vite apps",
+  "license": "MIT",
+  "homepage": "https://github.com/Credda-io/credda-js#readme",
+  "bugs": {
+    "url": "https://github.com/Credda-io/credda-js/issues",
+    "email": "martin@credda.io"
+  },
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "types": "./dist/index.d.ts"
+    },
+    "./headless": {
+      "import": "./dist/headless.js",
+      "require": "./dist/headless.cjs",
+      "types": "./dist/headless.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.4.5",
+    "vite": "^6.4.3",
+    "vite-plugin-dts": "^5.0.3",
+    "vitest": "^3.2.6"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Credda-io/credda-js.git"
+  }
+}
