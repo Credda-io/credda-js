@@ -358,3 +358,15 @@ else event.data.score;                                       // score events
 npm run build      # ES + CJS bundles + .d.ts
 npm run typecheck
 ```
+
+## License
+
+MIT © Credda. See [LICENSE](LICENSE).
+
+---
+
+Part of the Credda SDK family:
+[`@credda/js`](https://github.com/Credda-io/credda-js) ·
+[`credda-go`](https://github.com/Credda-io/credda-go) ·
+[`@credda/cli`](https://github.com/Credda-io/credda-cli) ·
+[`@credda/mcp-server`](https://github.com/Credda-io/credda-mcp)
