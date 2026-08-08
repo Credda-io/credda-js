@@ -1,0 +1,31 @@
+name: publish
+
+# Publishes this package to npm WITH provenance, so it appears under the
+# Credda-io GitHub org and carries a verified link back to this public source
+# repo. Provenance requires `id-token: write` AND a public repo (this one is).
+# Triggers on a version tag only — a published version can't be unpublished, so
+# releasing is a deliberate act. The tag version should match package.json.
+#
+# HUMAN STEP: set an `NPM_TOKEN` repo secret (npm Automation token with publish
+# rights on the @credda scope) in Settings → Secrets and variables → Actions.
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm install
+      - run: npm run build
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
