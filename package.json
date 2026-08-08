@@ -1,7 +1,7 @@
 {
   "name": "@credda/js",
   "version": "0.6.3",
-  "description": "Credda client SDK for React + Vite apps",
+  "description": "Official Credda SDK for TypeScript and JavaScript: typed client, React hooks, and offline credential verification.",
   "license": "MIT",
   "homepage": "https://github.com/Credda-io/credda-js#readme",
   "bugs": {
@@ -22,7 +22,8 @@
       "import": "./dist/headless.js",
       "require": "./dist/headless.cjs",
       "types": "./dist/headless.d.ts"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
@@ -62,5 +63,20 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Credda-io/credda-js.git"
+  },
+  "keywords": [
+    "credda",
+    "trust",
+    "reliability-score",
+    "verifiable-credentials",
+    "sdk",
+    "typescript",
+    "javascript",
+    "react",
+    "did-web",
+    "webhooks"
+  ],
+  "engines": {
+    "node": ">=18"
   }
 }

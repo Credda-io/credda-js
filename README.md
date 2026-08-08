@@ -9,6 +9,29 @@ client, fully typed against the live API.
 npm install @credda/js
 ```
 
+## Two entry points
+
+The package has two entry points, and picking the wrong one is the most common
+first-run failure.
+
+| Import | Contains | Needs React |
+| --- | --- | --- |
+| `@credda/js/headless` | `CreddaClient`, offline credential + webhook verification | no |
+| `@credda/js` | everything above, plus `CreddaProvider`, `useScore`, `useTrustToken` | **yes** |
+
+React is an *optional* peer dependency, so a plain `npm install @credda/js` in a
+Node service installs no React. Import the root entry there and it fails with
+`Cannot find package 'react'`. On a server, import `@credda/js/headless`.
+
+```ts
+// Node / any server runtime — no React required
+import { CreddaClient } from '@credda/js/headless';
+
+const credda = new CreddaClient({ apiBase: 'https://api.credda.io' });
+const trust = await credda.resolveToken('crd_share_…'); // public, no API key
+console.log(trust.finalScore, trust.scoreBand);
+```
+
 ## Two access models
 
 | Model        | Method / hook                     | Auth              | Where it's safe        |
@@ -50,7 +73,7 @@ export default function App() {
 ## Headless client (server-side)
 
 ```ts
-import { CreddaClient } from '@credda/js';
+import { CreddaClient } from '@credda/js/headless';
 
 const credda = new CreddaClient({ apiBase: 'https://api.credda.io' });
 
@@ -115,7 +138,7 @@ Complete walkthroughs (problem → flow → working calls) live at
 The short version:
 
 ```ts
-// Marketplace: rank a page of listings by trust (one call, ≤100 users)
+// Marketplace: read the trust record behind a page of listings (one call, ≤100 users)
 const { scores } = await credda.getScores(['seller_1', 'seller_2'], key);
 
 // Hiring: candidate hands you a token or an export file — verify offline
@@ -273,7 +296,7 @@ EdDSA-signed JWT) alongside the payload. You can verify it **without trusting a
 live Credda call** — once the JWKS is cached, verification is fully local.
 
 ```ts
-import { CreddaClient, verifyTrustCredential } from '@credda/js';
+import { CreddaClient, verifyTrustCredential } from '@credda/js/headless';
 
 const credda = new CreddaClient();
 const trust = await credda.resolveToken('crd_share_…');
@@ -297,7 +320,7 @@ Request a standards-compliant **W3C VC-JWT** and verify it offline — the issue
 `did:web` DID document is resolved automatically (JWKS fallback):
 
 ```ts
-import { CreddaClient, verifyVerifiableCredential } from '@credda/js';
+import { CreddaClient, verifyVerifiableCredential } from '@credda/js/headless';
 
 const credda = new CreddaClient();
 // GET /api/v1/verify/:token/credential?format=w3c returns { credentialVc, ... }
@@ -321,7 +344,7 @@ credential + revocation pointer), then verify it end-to-end offline in one call 
 including a tamper check that the plaintext score matches the signed credential:
 
 ```ts
-import { CreddaClient, verifyTrustExport } from '@credda/js';
+import { CreddaClient, verifyTrustExport } from '@credda/js/headless';
 
 const credda = new CreddaClient();
 const bundle = await credda.getTrustExport(shareToken);   // GET /verify/:token/export
@@ -335,7 +358,7 @@ Credda POSTs HMAC-signed trust events (`score.updated`, `score.band_changed`,
 `dispute.resolved`). Verify on the **raw** body, before parsing:
 
 ```ts
-import { constructWebhookEvent } from '@credda/js';
+import { constructWebhookEvent } from '@credda/js/headless';
 
 // e.g. app.post('/credda', express.raw({ type: 'application/json' }), async (req, res) => {
 const event = await constructWebhookEvent({
