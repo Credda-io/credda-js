@@ -1,6 +1,6 @@
 {
   "name": "@credda/js",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Credda client SDK for React + Vite apps",
   "license": "MIT",
   "homepage": "https://github.com/Credda-io/credda-js#readme",
