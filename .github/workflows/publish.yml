@@ -1,17 +1,30 @@
 name: publish
 
-# Publishes this package to npm WITH provenance, so it appears under the
-# Credda-io GitHub org and carries a verified link back to this public source
-# repo. Provenance requires `id-token: write` AND a public repo (this one is).
-# Triggers on a version tag only — a published version can't be unpublished, so
-# releasing is a deliberate act. The tag version should match package.json.
+# Publishes this package to two registries on a version tag.
 #
-# HUMAN STEP: set an `NPM_TOKEN` repo secret (npm Automation token with publish
-# rights on the @credda scope) in Settings → Secrets and variables → Actions.
+# 1. npmjs.org WITH provenance (the `publish` job). Provenance needs
+#    `id-token: write` and a public source repo (this one is). It adds a
+#    verified link on npmjs back to this repo and a Packages link in this
+#    repo's sidebar. It does NOT populate the Credda-io org Packages tab.
+#
+# 2. GitHub Packages, npm.pkg.github.com (the `publish-gpr` job). That
+#    registry is what github.com/orgs/Credda-io/packages lists. GitHub
+#    Packages requires the npm scope to match the repository owner, so this
+#    job republishes the same build under the @credda-io scope using the
+#    built-in GITHUB_TOKEN. The public npmjs name (@credda/...) is unchanged.
+#
+# A published version cannot be unpublished, so releasing is gated on a tag.
+# The tag version should match package.json. workflow_dispatch is available
+# for a manual re-run.
+#
+# HUMAN STEP: set an `NPM_TOKEN` repo secret (npm Automation token with
+# publish rights on the @credda scope) under Settings, Secrets and variables,
+# Actions. The GitHub Packages job needs no secret; it uses GITHUB_TOKEN.
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 permissions:
   contents: read
   id-token: write
@@ -29,3 +42,35 @@ jobs:
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  publish-gpr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: '@credda-io'
+      - run: npm install
+      - run: npm run build
+      - name: Retarget the build to the Credda-io GitHub Packages scope
+        run: |
+          node -e "const fs=require('fs');const p=require('./package.json');p.name=p.name.replace(/^@credda\//,'@credda-io/');p.publishConfig={registry:'https://npm.pkg.github.com'};fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');console.log('publishing '+p.name+'@'+p.version+' to GitHub Packages');"
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Confirm the package is registered under the Credda-io org
+        continue-on-error: true
+        run: |
+          UNSCOPED=$(node -e "console.log(require('./package.json').name.split('/')[1])")
+          ENC=$(node -e "console.log(encodeURIComponent(require('./package.json').name))")
+          for N in "$UNSCOPED" "$ENC"; do
+            echo "== querying org package name=$N =="
+            code=$(curl -sS -o resp.json -w '%{http_code}' -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/Credda-io/packages/npm/$N")
+            echo "HTTP $code"; cat resp.json; echo
+            if [ "$code" = "200" ]; then echo "CONFIRMED under org, package_name=$N"; break; fi
+          done
