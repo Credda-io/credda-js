@@ -186,6 +186,7 @@ export type {
   QualificationBreakdown,
   VerifiedProfilePayload,
   RecordQualificationInput,
+  QualificationImportItemInput,
   RecordQualificationResult,
   QualificationImportItemResult,
   QualificationImportResponse,

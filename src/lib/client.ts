@@ -1606,6 +1606,10 @@ export class CreddaClient {
    *
    * `issuer`/`label` are carried for display and are never read by the measure.
    * Writes nothing score-side and never enqueues a recompute.
+   *
+   * Pass `claimRef` to give the claim a stable identity so syncing it twice
+   * (self-attested at creation, verified at confirmation) counts ONCE, and
+   * `{ claimRef, retract: true }` to withdraw a claim the subject deleted.
    */
   recordQualification(
     userId: string,
@@ -1634,7 +1638,7 @@ export class CreddaClient {
    */
   importQualifications(
     userId: string,
-    claims: RecordQualificationInput[],
+    claims: QualificationImportItemInput[],
     apiKey: string,
   ): Promise<QualificationImportResponse> {
     return this.post<QualificationImportResponse>(
@@ -2640,6 +2644,11 @@ export interface ScoreExplainPayload {
   consistency?:   { factor: number; description: string };
   momentum?:      { factor: number; direction: string; description: string };
   confidence:     { eventsRecorded: number; eventsNeededForFull: number; level: string };
+  /** Present ONLY for an unverified record whose live position is set by the
+   *  recency-weighted provisional band. A counterparty-verified record is
+   *  anchored by its verified outcomes (which carry no date) and does NOT decay
+   *  with inactivity, so it returns `null` here — this is never a claim that a
+   *  verified score "softens with time". */
   recencyWarning?: string | null;
   computedAt?:     string;
 }
@@ -3513,6 +3522,8 @@ export interface ConfirmationRequest {
   counterpartyRef:   string;
   counterpartyName:  string | null;
   description:       string | null;
+  /** The claim identity supplied at create time; passed to the writer on confirm. Null when none. */
+  claimRef:          string | null;
   /** Post-decision redirect configured for the hosted page (null when unset). */
   returnUrl:         string | null;
   status:            ConfirmationStatus;
@@ -3707,6 +3718,15 @@ export interface CreateReferenceInput {
   counterpartyName?: string;
   /** Human description of the claim they are being asked to confirm. */
   description?:      string;
+  /**
+   * The stable identity of the CLAIM this reference is about, passed through to
+   * the writer on confirm. Send the SAME value you send to
+   * `recordQualification` for that claim and the two resolve to ONE claim
+   * (verified wins), so a claim you synced self-attested and then had a
+   * reference confirm is one entry, not two. Caller-supplied only; omit and the
+   * confirmed claim stands alone. Never shown on the public preview.
+   */
+  claimRef?:         string;
   /** Where the HOSTED page returns them after they decide. Strictly validated. */
   returnUrl?:        string;
   /** 1–90 days; clamped server-side. */
@@ -3886,12 +3906,33 @@ export interface VerifiedProfilePayload {
    * weight per claim — no prestige, no ranking. Null when nothing is claimed.
    */
   verificationDepth: number | null;
+  /**
+   * Compact headline over the same depth + counts: a coarse, versioned state
+   * plus the raw counts. Additive; never a scoring input. `coverage` is how many
+   * record categories carry at least one verified claim (descriptive breadth).
+   */
+  recordVerification: {
+    state:             'no_record' | 'self_reported' | 'partially_verified' | 'fully_verified';
+    verificationDepth: number | null;
+    verified:          number;
+    claimed:           number;
+    coverage:          number;
+  };
+  /**
+   * Counterparty-density summary: how many DISTINCT third parties have confirmed
+   * a claim (and how many are employers). A plain distinct-count over verified
+   * claims — bias-invariant to issuer identity, never a scoring input.
+   */
+  verifiedIssuers: {
+    distinctVerifiedIssuers:   number;
+    distinctVerifiedEmployers: number;
+  };
   note:              string;
   /** What this measure is not. Always present. */
   disclosures:       string[];
 }
 
-/** Body for `recordQualification` (and each item of `importQualifications`). */
+/** Body for `recordQualification`. */
 export interface RecordQualificationInput {
   category:    QualificationCategory;
   /** Free-text claim label. Carried for display; never read by the measure. */
@@ -3904,7 +3945,34 @@ export interface RecordQualificationInput {
   reference?:  string;
   /** The third-party witness. Required for the claim to count as verified. */
   verifiedBy?: string;
+  /**
+   * Stable, caller-chosen identity for THIS claim (1–200 chars). Claims sharing
+   * `(category, claimRef)` resolve to ONE claim, so syncing the same claim twice
+   * — self-attested when the user enters it, verified when a counterparty
+   * confirms it — counts once (verified wins). Omit and one call is one claim,
+   * exactly as before.
+   */
+  claimRef?:   string;
+  /**
+   * Record a RETRACTION MARKER for `(category, claimRef)` instead of a claim:
+   * the claim is then withdrawn from the measure and the itemised record.
+   * REQUIRES `claimRef` (400 without it), and any `verifiedBy` sent alongside is
+   * IGNORED — a retraction is never verified. The ledger stays append-only:
+   * nothing is deleted, the marker is one more event. A claim a witness already
+   * confirmed is permanent record and a later retraction does not un-verify it.
+   *
+   * Not accepted by `importQualifications`, which is creation-only.
+   */
+  retract?:    boolean;
 }
+
+/**
+ * One item of `importQualifications`. The single-claim body MINUS `retract`:
+ * bulk import is creation-only and refuses an item carrying `retract` with a 400
+ * rather than silently recording a claim you meant to withdraw. `claimRef` IS
+ * accepted, so an imported claim can be confirmed by a later sync.
+ */
+export type QualificationImportItemInput = Omit<RecordQualificationInput, 'retract'>;
 
 /** POST /api/v1/users/:id/qualifications. */
 export interface RecordQualificationResult {
@@ -3913,6 +3981,10 @@ export interface RecordQualificationResult {
   category:   QualificationCategory;
   eventType:  string;
   isVerified: boolean;
+  /** The claim identity as stored. Null when none was supplied. */
+  claimRef:   string | null;
+  /** True when this call recorded a RETRACTION MARKER rather than a claim. */
+  retracted:  boolean;
   /** Why the claim was recorded as self-attested. Null when verified. */
   verificationNote: string | null;
   note:             string;
@@ -3929,6 +4001,8 @@ export interface QualificationImportItemResult {
   isVerified?: boolean;
   jurisdiction?: string | null;
   reference?:    string | null;
+  /** The claim identity as stored, for a later confirmation-time sync. */
+  claimRef?:     string | null;
   verificationNote?: string | null;
   /** Present only when this row failed; the rest of the batch still applied. */
   error?:     string;
