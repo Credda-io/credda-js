@@ -272,6 +272,12 @@ const profile = await credda.getVerifiedProfile('worker_7', key);
 // `verificationNote` saying why. It counts WHETHER a claim is verified, never
 // how prestigious it is: no school, employer or credential is ranked.
 
+// Optional `claimRef` gives a claim a stable identity so the SAME claim synced
+// twice — self-attested when the user enters it, verified when a reference
+// confirms it — resolves to ONE entry (verified wins) instead of two. Pass the
+// same `claimRef` to `createReferenceRequest`, and `{ claimRef, retract: true }`
+// withdraws a claim the subject deleted (append-only: nothing is erased).
+
 // Public, no key — the token is the subject's own consent to present it.
 const shown = await new CreddaClient().getPublicProfessionalRecord('crd_share_…');
 
