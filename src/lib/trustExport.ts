@@ -24,7 +24,7 @@ export async function verifyTrustExport(
   opts: VerifyVcOptions = {},
 ): Promise<VerifiedTrustExport> {
   if (!bundle || bundle.format !== 'credda-trust-export/1') {
-    throw new Error('credda: unrecognised trust export format');
+    throw new Error('credda: unrecognized trust export format');
   }
   const vcJwt = bundle.credential?.vc;
   if (!vcJwt) throw new Error('credda: trust export has no credential');

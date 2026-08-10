@@ -66,7 +66,7 @@ export interface DisputeResolvedData {
   user: { externalId: string | null };
   outcome: 'FOR_USER' | 'AGAINST_USER';
   status: 'RESOLVED_FOR_USER' | 'RESOLVED_AGAINST_USER';
-  /** True when the dispute lapsed unadjudicated (resolved in the user's favour). */
+  /** True when the dispute lapsed unadjudicated (resolved in the user's favor). */
   lapsed: boolean;
   resolvedAt: string;
 }

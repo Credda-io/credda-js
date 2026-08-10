@@ -339,7 +339,7 @@ const profile = await credda.getVerifiedProfile('worker_7', key);
 // withdraws a claim the subject deleted (append-only: nothing is erased).
 //
 // `{ claimRef, supersedes: true }` RETIRES an earlier confirmed instance, for a
-// licence that lapsed or a credential that was downgraded, so it stops
+// license that lapsed or a credential that was downgraded, so it stops
 // resolving verified. It is not a delete and not a retraction: the earlier
 // event stays on the ledger and the record still reports `previouslyVerifiedAt`,
 // so "confirmed until this date" stays sayable. Re-syncing the same `claimRef`

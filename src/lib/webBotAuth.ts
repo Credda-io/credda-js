@@ -153,7 +153,7 @@ function parseParams(tail: string): Record<string, string | number> {
   return params;
 }
 
-/** Parse a `Signature-Input` header value into its labelled signatures. */
+/** Parse a `Signature-Input` header value into its labeled signatures. */
 export function parseSignatureInput(header: string): ParsedSignature[] {
   return splitDictionary(header).flatMap(({ label, value }) => {
     const close = value.lastIndexOf(')');

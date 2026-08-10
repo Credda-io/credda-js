@@ -127,7 +127,7 @@ export class CreddaClient {
     const tries = retryable ? this.retries + 1 : 1;
     for (let i = 0; i < tries; i++) {
       if (i > 0) {
-        // Honour the server's own `Retry-After` when it sent one — it knows
+        // Honor the server's own `Retry-After` when it sent one — it knows
         // exactly when the window resets, and backing off for less than it
         // asked just earns another 429. Fall back to exponential backoff
         // otherwise. Capped either way so a long quota reset can't hang a call.
@@ -1159,7 +1159,7 @@ export class CreddaClient {
   // supply a constant, look a value up in your own table, or apply one of a
   // fixed transform whitelist. There is no expression language, by design.
   //
-  // ⚠️ `isVerified` defaults to false. It is only honoured for a record whose
+  // ⚠️ `isVerified` defaults to false. It is only honored for a record whose
   // mapping also resolves `verifiedBy` (the third party who witnessed the
   // outcome); otherwise the record still ingests, downgraded, with a warning.
 
@@ -1613,7 +1613,7 @@ export class CreddaClient {
    * (self-attested at creation, verified at confirmation) counts ONCE,
    * `{ claimRef, retract: true }` to withdraw a claim the subject deleted, and
    * `{ claimRef, supersedes: true }` to RETIRE an earlier confirmed instance —
-   * an expired licence, a downgraded credential — so it stops resolving
+   * an expired license, a downgraded credential — so it stops resolving
    * verified without anything being deleted and without losing when it was last
    * confirmed. Re-syncing the same `claimRef` on its own does NOT replace the
    * earlier instance: the ledger appends and verified wins, so a re-sync that is
@@ -1683,7 +1683,7 @@ export class CreddaClient {
 
   /**
    * The subject's whole verified professional record — reliability + verified
-   * experience + tenure + itemised qualifications — as an OPEN JSON Resume
+   * experience + tenure + itemized qualifications — as an OPEN JSON Resume
    * document (jsonresume.org), so it drops into an ATS/HRIS or résumé tool
    * without a bespoke Credda integration. Every item is flagged verified vs
    * self-reported (a per-item `credda` extension) and verified items anchor to
@@ -1847,7 +1847,7 @@ function queryString(query: Record<string, string | number | undefined>): string
 }
 
 /**
- * Serialise the closed book filter set. Shared by `listUsers` and
+ * Serialize the closed book filter set. Shared by `listUsers` and
  * `getBookSummary` so the two surfaces can never disagree about the filter
  * vocabulary — the same reason the server parses both with one function.
  */
@@ -2290,7 +2290,7 @@ export interface TrustPayload {
   /**
    * Current canonical score, or **null when no score has been computed yet**
    * — never a placeholder. A `50` fallback used to stand in here; the engine
-   * never produces it for an unscored subject (v5.3 anchors a new record near
+   * never produces it for an unscored subject (a new record anchors near
    * 20, "Provisional") and it bands as "Proven".
    */
   finalScore:        number | null;
@@ -2515,7 +2515,7 @@ export interface ScorePayload {
   /**
    * Current canonical score, or **null when no score has been computed yet**
    * — never a placeholder. A `50` fallback used to stand in here; the engine
-   * never produces it for an unscored subject (v5.3 anchors a new record near
+   * never produces it for an unscored subject (a new record anchors near
    * 20, "Provisional") and it bands as "Proven".
    */
   finalScore:     number | null;
@@ -2838,7 +2838,7 @@ export interface ScoreComponent {
   /**
    * Share of the weighted raw score this component drives, or null for the two
    * multiplicative modifiers. It follows the FORMULA VERSION that produced the
-   * breakdown (v5.3: .40/.35/.15/.10; v5.4 blend: .37/.32/.15/.08), so never
+   * breakdown (v5.6 applies .37/.32/.15/.08/.08), so never
    * hardcode it: read it, or read `GET /api/v1/scoring/model`.
    */
   weight:      number | null;
@@ -3124,7 +3124,7 @@ export interface ReportEventInput {
    * event records exactly as it does today.
    *
    * It must be a keyed digest YOU compute:
-   * `HMAC-SHA256(yourSecret, "credda:confirmer:v1:" + normalisedIdentity)`,
+   * `HMAC-SHA256(yourSecret, "credda:confirmer:v1:" + normalizedIdentity)`,
    * rendered as 64 lowercase hex characters. That lets Credda tell that two
    * confirmations came from the SAME party while never learning who that party
    * is. **Never send a raw email address, IP address, name or user id**, the
@@ -3863,7 +3863,7 @@ export interface ActivationCampaignResult {
   }>;
 }
 
-/** The funnel a campaign reports — factual counts, never a score or judgement. */
+/** The funnel a campaign reports — factual counts, never a score or judgment. */
 export interface ActivationFunnel {
   submitted:        number;
   pending:          number;
@@ -4223,7 +4223,7 @@ export interface RecordQualificationInput {
   claimRef?:   string;
   /**
    * Record a RETRACTION MARKER for `(category, claimRef)` instead of a claim:
-   * the claim is then withdrawn from the measure and the itemised record.
+   * the claim is then withdrawn from the measure and the itemized record.
    * REQUIRES `claimRef` (400 without it), and any `verifiedBy` sent alongside is
    * IGNORED — a retraction is never verified. The ledger stays append-only:
    * nothing is deleted, the marker is one more event. A claim a witness already
@@ -4248,7 +4248,7 @@ export interface RecordQualificationInput {
    *
    * It grants nothing on its own: the `isVerified` of the superseding event
    * still comes from the witness rule, so superseding WITH a witness
-   * re-verifies (a renewed licence) and superseding without one lands
+   * re-verifies (a renewed license) and superseding without one lands
    * self-attested (an expired one).
    *
    * Not accepted by `importQualifications`, which is creation-only.
@@ -4494,7 +4494,7 @@ export interface ReliabilityReportOutcome {
   occurredAt: string;
 }
 
-/** A ranked driver of the score (a relabelled reason code). */
+/** A ranked driver of the score (a relabeled reason code). */
 export interface ReliabilityReportFactor {
   code:         string;
   factor:       string;
