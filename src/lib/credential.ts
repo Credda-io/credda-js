@@ -2,7 +2,7 @@
  * Offline verification of Credda Verifiable Trust Credentials.
  *
  * Verifies an EdDSA (Ed25519) signed credential against Credda's published JWKS
- * using Web Crypto — works in Node 20+ and modern browsers. Once the JWKS is
+ * using Web Crypto. It works in Node 20+ and modern browsers. Once the JWKS is
  * cached, verification is fully local: no call to Credda is needed to trust a
  * credential. See the scoring API's docs/TRUST_CREDENTIALS.md.
  */
@@ -134,7 +134,7 @@ export async function verifyTrustCredential(
   };
 }
 
-// ─── W3C Verifiable Credential (VC-JWT) verification — Trust Fabric v3 ──────────
+// ─── W3C Verifiable Credential (VC-JWT) verification: Trust Fabric v3 ──────────
 
 interface DidVerificationMethod {
   id: string;
@@ -311,7 +311,7 @@ export async function verifyVerifiableCredential(
 
   const vc = payload.vc ?? {};
 
-  // StatusList2021 revocation — reject a revoked credential like an expired one.
+  // StatusList2021 revocation: reject a revoked credential like an expired one.
   const status = vc.credentialStatus as CredentialStatusEntry | undefined;
   if (status && opts.checkRevocation !== false) {
     if (await isCredentialRevoked(status, opts)) throw new Error('credda: credential revoked');

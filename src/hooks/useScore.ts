@@ -12,7 +12,7 @@ export interface UseScoreResult {
  * Fetch the latest computed score for a user.
  *
  * Requires a platform API key (`crd_live_…`). This performs an authenticated
- * request, so use it in a SERVER-SIDE / trusted context only — never ship a
+ * request, so use it in a SERVER-SIDE / trusted context only, never ship a
  * platform key to the browser. For public, in-browser trust badges use
  * `useTrustToken` (a share token) instead.
  */

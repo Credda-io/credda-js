@@ -1,7 +1,7 @@
 /**
  * Webhook verification tests. Signs a payload with the exact scheme the scoring
  * API uses (HMAC-SHA256 over `${ts}.${rawBody}`) via Node crypto, then verifies
- * it through the SDK — proving the two sides agree. No network.
+ * it through the SDK, proving the two sides agree. No network.
  */
 
 import { describe, it, expect } from 'vitest';

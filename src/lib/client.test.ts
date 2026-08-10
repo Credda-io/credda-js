@@ -1,5 +1,5 @@
 /**
- * CreddaClient tests — public methods over a stubbed fetch (no network).
+ * CreddaClient tests: public methods over a stubbed fetch (no network).
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -28,7 +28,7 @@ describe('automatic retries (opt-in)', () => {
     return () => calls;
   }
 
-  it('off by default — a transient failure surfaces immediately', async () => {
+  it('off by default: a transient failure surfaces immediately', async () => {
     const calls = flakyStub(1);
     const client = new CreddaClient({ apiBase: BASE });
     await expect(client.getScore('u1', 'k')).rejects.toBeInstanceOf(CreddaError);
@@ -217,7 +217,7 @@ describe('getChangelog', () => {
     const res = await new CreddaClient({ apiBase: BASE }).getChangelog();
     expect(called).toBe(`${BASE}/api/v1/changelog`);
     expect(res.apiVersion).toBe('v1');
-    // An empty deprecation list means nothing is deprecated — a caller must be
+    // An empty deprecation list means nothing is deprecated: a caller must be
     // able to tell that apart from an unavailable list, so it is always present.
     expect(res.deprecations).toEqual([]);
     expect(res.versioning.deprecation.minimumNoticeDays).toBe(180);
@@ -611,7 +611,7 @@ describe('listUsers (your book of subjects)', () => {
       hasScore: false, scoreFrozen: false, subjectType: 'ORGANIZATION',
       registeredSince: '2026-01-01', registeredBefore: '2026-07-01',
     });
-    // `false` must reach the wire — it is a filter value, not an absent one.
+    // `false` must reach the wire: it is a filter value, not an absent one.
     expect(url).toContain('hasScore=false');
     expect(url).toContain('scoreFrozen=false');
     expect(url).toContain('subjectType=ORGANIZATION');
@@ -1002,7 +1002,7 @@ describe('bulk screenings', () => {
   });
 });
 
-describe('data ingress — field-mapping ingest', () => {
+describe('data ingress: field-mapping ingest', () => {
   const mapping = {
     userId: 'worker.id',
     eventType: { path: 'status', values: { done: 'CONTRACT_FULFILLED' } },
@@ -1071,7 +1071,7 @@ describe('data ingress — field-mapping ingest', () => {
   });
 });
 
-describe('data ingress — historical CSV import', () => {
+describe('data ingress: historical CSV import', () => {
   it('submits a CSV backfill and reads back status + counts', async () => {
     let url = ''; let init: any = {};
     vi.stubGlobal('fetch', vi.fn(async (u: string, i: any) => {
@@ -1125,7 +1125,7 @@ describe('data ingress — historical CSV import', () => {
 
 /**
  * Records every fetch call so a test can assert on the LAST one (url, method,
- * headers, body) — the new surfaces care about auth presence/absence, not just
+ * headers, body): the new surfaces care about auth presence/absence, not just
  * the path.
  */
 function recordingStub(status: number, body: unknown) {
@@ -1160,7 +1160,7 @@ const CONFIRMATION = {
   createdAt: '2026-07-23T00:00:00.000Z',
 };
 
-describe('confirmation requests — keyed half', () => {
+describe('confirmation requests: keyed half', () => {
   it('creates a request, sends the idempotency key, and returns the one-time token + all three delivery URLs', async () => {
     const calls = recordingStub(201, {
       confirmation: CONFIRMATION,
@@ -1268,8 +1268,8 @@ describe('confirmation requests — keyed half', () => {
   });
 });
 
-describe('confirmation requests — the KEYLESS counterparty half', () => {
-  it('previews with only the token — no Authorization header is sent', async () => {
+describe('confirmation requests: the KEYLESS counterparty half', () => {
+  it('previews with only the token: no Authorization header is sent', async () => {
     const calls = recordingStub(200, {
       confirmation: {
         id: 'cnf_1',
@@ -1286,7 +1286,7 @@ describe('confirmation requests — the KEYLESS counterparty half', () => {
       },
     });
 
-    // No API key is passed at all — the counterparty holds a token, not a key.
+    // No API key is passed at all: the counterparty holds a token, not a key.
     const r = await new CreddaClient({ apiBase: BASE }).previewConfirmation('cnf_1', 'raw token/abc');
     expect(calls[0].url).toBe(`${BASE}/api/v1/confirmations/cnf_1/preview?token=raw%20token%2Fabc`);
     expect(calls[0].init.headers).toBeUndefined();
@@ -1325,7 +1325,7 @@ describe('confirmation requests — the KEYLESS counterparty half', () => {
     expect(r.confirmation.resultingEventId).toBeNull();
   });
 
-  it('never retries a respond — the token is single-use, so a repeat can only 409', async () => {
+  it('never retries a respond: the token is single-use, so a repeat can only 409', async () => {
     let attempts = 0;
     vi.stubGlobal('fetch', vi.fn(async () => {
       attempts++;
@@ -1363,7 +1363,7 @@ const REFERENCE = {
   createdAt: '2026-07-24T00:00:00.000Z',
 };
 
-describe('reference requests — keyed half', () => {
+describe('reference requests: keyed half', () => {
   it('creates a request, sends the idempotency key, and returns the one-time token + all three delivery URLs', async () => {
     const calls = recordingStub(201, {
       reference: REFERENCE,
@@ -1438,8 +1438,8 @@ describe('reference requests — keyed half', () => {
   });
 });
 
-describe('reference requests — the KEYLESS counterparty half', () => {
-  it('previews with only the token — no Authorization header is sent', async () => {
+describe('reference requests: the KEYLESS counterparty half', () => {
+  it('previews with only the token: no Authorization header is sent', async () => {
     const calls = recordingStub(200, {
       reference: {
         id: 'ref_1',
@@ -1524,7 +1524,7 @@ describe('career export', () => {
     const calls = recordingStub(200, RESUME);
     const r = await new CreddaClient({ apiBase: BASE }).getPublicCareerExport('raw token/abc');
     expect(calls[0].url).toBe(`${BASE}/api/v1/verify/raw%20token%2Fabc/career-export`);
-    // The token IS the consent — a public route must never carry a platform key.
+    // The token IS the consent: a public route must never carry a platform key.
     expect(calls[0].init.headers).toBeUndefined();
     expect(r.$schema).toMatch(/jsonresume/);
   });
@@ -1702,7 +1702,7 @@ describe('Verified Profile (qualifications)', () => {
     expect(r.disclosures.length).toBeGreaterThan(0);
   });
 
-  it('records a claim WITH a third-party witness — verified', async () => {
+  it('records a claim WITH a third-party witness: verified', async () => {
     const calls = recordingStub(201, {
       userId: 'worker_7', eventId: 'ev_1', category: 'certification',
       eventType: 'CERTIFICATION_VERIFIED', isVerified: true, verificationNote: null,
@@ -1720,7 +1720,7 @@ describe('Verified Profile (qualifications)', () => {
     expect(r.verificationNote).toBeNull();
   });
 
-  it('records a claim with NO witness — still recorded, but self-attested with a reason', async () => {
+  it('records a claim with NO witness: still recorded, but self-attested with a reason', async () => {
     recordingStub(201, {
       userId: 'worker_7', eventId: 'ev_2', category: 'skill',
       eventType: 'SKILL_VERIFIED', isVerified: false,
@@ -1734,7 +1734,7 @@ describe('Verified Profile (qualifications)', () => {
     expect(r.verificationNote).toMatch(/no third-party witness/);
   });
 
-  it('bulk-imports a claimed record — wraps claims and posts to the import path', async () => {
+  it('bulk-imports a claimed record: wraps claims and posts to the import path', async () => {
     const calls = recordingStub(200, {
       userId: 'worker_7', created: 2, failed: 0, total: 2, maxClaims: 100,
       items: [
@@ -1855,7 +1855,7 @@ describe('Professional Record', () => {
       credential: 'eyJ.a.b',
     });
     const r = await new CreddaClient({ apiBase: BASE }).getPublicProfessionalRecord('tok 1');
-    // scope=full is required — the API serves the block at no other scope.
+    // scope=full is required: the API serves the block at no other scope.
     expect(calls[0].url).toBe(`${BASE}/api/v1/verify/tok%201?scope=full&professional=1`);
     expect(calls[0].init.headers).toBeUndefined();
     expect(r.professionalRecord?.reliability.band).toBe('Good');
@@ -1919,7 +1919,7 @@ describe('worker reliability report', () => {
     const calls = recordingStub(200, { token: 'tok_1', issuer: 'credda.io', reliabilityReport: REPORT });
     const r = await new CreddaClient({ apiBase: BASE }).getPublicReliabilityReport('tok 1');
     expect(calls[0].url).toBe(`${BASE}/api/v1/verify/tok%201/reliability-report`);
-    // keyless — the token is the capability, not an API key
+    // keyless: the token is the capability, not an API key
     expect(calls[0].init.headers).toBeUndefined();
     expect(r.reliabilityReport?.reliability.band).toBe('Good');
   });

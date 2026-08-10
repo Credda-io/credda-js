@@ -4,7 +4,7 @@
  * A trust export (from `CreddaClient.getTrustExport` or a saved file) bundles a
  * signed W3C credential with convenience plaintext (current score, history). This
  * verifies the credential's signature + expiry + issuer + revocation, and then
- * cross-checks that the plaintext score agrees with the SIGNED credential — so a
+ * cross-checks that the plaintext score agrees with the SIGNED credential, so a
  * bundle whose plaintext was edited without a matching re-signed credential is
  * rejected. Offline (WebCrypto); one call to trust a received export.
  */

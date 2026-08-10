@@ -1,7 +1,7 @@
 /**
  * Error-surface tests for CreddaClient: what an integrator actually gets back
  * when a call fails, and how the opt-in retry policy reacts to the server's
- * own back-off instructions. No network — fetch is stubbed.
+ * own back-off instructions. No network: fetch is stubbed.
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -168,7 +168,7 @@ describe('reference catalogs', () => {
     expect(cat.enums[0].name).toBe('eventType');
   });
 
-  it('both are public — no Authorization header is sent', async () => {
+  it('both are public: no Authorization header is sent', async () => {
     let init: RequestInit | undefined;
     vi.stubGlobal('fetch', vi.fn(async (_u: string, i?: RequestInit) => { init = i; return res(200, {}); }));
     await new CreddaClient({ apiBase: BASE }).getErrorCatalog();

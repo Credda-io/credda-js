@@ -9,7 +9,7 @@
  *                                  agent that publishes its keys" (RFC 9421 +
  *                                  Web Bot Auth). Normally verified by
  *                                  bot-mitigation infrastructure in front of
- *                                  you — this helper exists for receivers who
+ *                                  you. This helper exists for receivers who
  *                                  terminate their own edge.
  *
  * The HMAC check is the one that protects the payload. This one does not
@@ -31,7 +31,7 @@
  * `Cache-Control: max-age=86400`), and pass it in.
  *
  * Requires WebCrypto Ed25519 (Node 18.4+, Chrome 137+, Safari 17+, Firefox
- * 129+). Where it is unavailable the result is `{ valid: false, reason }` — a
+ * 129+). Where it is unavailable the result is `{ valid: false, reason }`: a
  * clear signal, never a silent pass.
  */
 
@@ -56,7 +56,7 @@ export interface VerifyWebBotAuthInput {
   /** HTTP method of the received request (Credda sends `POST`). */
   method: string;
   /**
-   * The ABSOLUTE URL the request was made to, as the client saw it — scheme,
+   * The ABSOLUTE URL the request was made to, as the client saw it: scheme,
    * host and path. Behind a proxy, reconstruct it from your forwarded headers;
    * `@target-uri` and `@authority` are covered components, so a mismatch here
    * is indistinguishable from a forged signature.
@@ -67,7 +67,7 @@ export interface VerifyWebBotAuthInput {
   /** Credda's signature directory, fetched and cached by you. */
   directory: WebBotAuthDirectory;
   /**
-   * Require `Signature-Agent` to be exactly this origin. Strongly recommended —
+   * Require `Signature-Agent` to be exactly this origin. Strongly recommended:
    * without it, any correctly signed agent whose key happens to be in the
    * directory you passed will verify. Default: no check.
    */
@@ -76,7 +76,7 @@ export interface VerifyWebBotAuthInput {
   checkExpiry?: boolean;
   /** Clock skew allowance in seconds when checking the window. Default 300. */
   toleranceSeconds?: number;
-  /** Override the current time (unix seconds) — for tests. */
+  /** Override the current time (unix seconds), for tests. */
   nowSeconds?: number;
 }
 
@@ -187,7 +187,7 @@ export function parseSignatureHeader(header: string): Record<string, string> {
 // A deliberate, self-contained re-implementation: `@credda/js` is published to
 // consumers who must not need Credda's server code, and it carries no
 // dependencies. It is pinned by tests against RFC 9421's own Appendix B.2.6
-// ed25519 vector — an external authority, which is a stronger guard than
+// ed25519 vector, an external authority, which is a stronger guard than
 // agreeing with another copy in this repo.
 
 function fieldValue(headers: VerifyWebBotAuthInput['headers'], name: string): string | null {
@@ -226,7 +226,7 @@ function derivedValue(name: string, method: string, url: URL): string | null {
  * Rebuild the RFC 9421 signature base for a received request.
  *
  * The `@signature-params` line uses the signature's OWN received serialization
- * (`sig.raw`), never a re-serialization — parameter order is whatever the
+ * (`sig.raw`), never a re-serialization: parameter order is whatever the
  * signer chose, and re-serializing would silently break on a signer that
  * ordered them differently.
  */
@@ -303,7 +303,7 @@ async function ed25519Verify(
  * Verify the Web Bot Auth signature on a received request. Returns a result
  * object rather than throwing, so a handler can branch cleanly.
  *
- * This does NOT verify the webhook payload — use `verifyWebhookSignature` /
+ * This does NOT verify the webhook payload. Use `verifyWebhookSignature` /
  * `constructWebhookEvent` for that. Run both.
  */
 export async function verifyWebBotAuthSignature(
@@ -335,7 +335,7 @@ export async function verifyWebBotAuthSignature(
     if (agent !== input.expectedAgent) {
       return { valid: false, reason: `Signature-Agent mismatch (expected ${input.expectedAgent})` };
     }
-    // A Signature-Agent that is present but NOT covered is worthless — an
+    // A Signature-Agent that is present but NOT covered is worthless: an
     // attacker could swap it freely. The drafts require it be signed.
     if (!sig.components.some((c) => c.name.toLowerCase() === 'signature-agent')) {
       return { valid: false, reason: 'Signature-Agent is not a covered component' };

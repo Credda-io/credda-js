@@ -2,10 +2,10 @@
  * Credda API client.
  *
  * Two access models, matching the API:
- *   • Public  — resolveToken(shareToken) hits GET /api/v1/verify/:token. No key.
+ *   • Public:   resolveToken(shareToken) hits GET /api/v1/verify/:token. No key.
  *               Safe to run in a browser. This is what trust badges use.
- *   • Platform — getScore()/getExplain()/… send a platform API key as a Bearer
- *               token. These are for SERVER-SIDE / trusted use only — never ship
+ *   • Platform: getScore()/getExplain()/… send a platform API key as a Bearer
+ *               token. These are for SERVER-SIDE / trusted use only, never ship
  *               a `crd_live_…` key to a browser bundle. Use resolveToken there.
  */
 
@@ -21,7 +21,7 @@ export interface CreddaConfig {
   /**
    * Opt-in automatic retries for TRANSIENT failures (network errors, 429,
    * 502/503/504). Applied to GETs always, and to POSTs ONLY when the request
-   * carries an Idempotency-Key — a non-idempotent write is never retried, so
+   * carries an Idempotency-Key: a non-idempotent write is never retried, so
    * enabling this can't double-report an event. `retries` is the number of
    * RE-attempts (0 = off, the default); backoff is `retryBaseMs * 2^n` (base
    * 300ms) capped at 5s.
@@ -45,7 +45,7 @@ export function isRetryableStatus(status: number): boolean {
 }
 
 /**
- * Parse a `Retry-After` header into milliseconds. Pure — unit tested.
+ * Parse a `Retry-After` header into milliseconds. Pure, unit tested.
  *
  * The API sends whole seconds on every 429; HTTP also permits an HTTP-date, so
  * both are accepted. Returns null when absent/unparseable (the caller then
@@ -127,7 +127,7 @@ export class CreddaClient {
     const tries = retryable ? this.retries + 1 : 1;
     for (let i = 0; i < tries; i++) {
       if (i > 0) {
-        // Honor the server's own `Retry-After` when it sent one — it knows
+        // Honor the server's own `Retry-After` when it sent one: it knows
         // exactly when the window resets, and backing off for less than it
         // asked just earns another 429. Fall back to exponential backoff
         // otherwise. Capped either way so a long quota reset can't hang a call.
@@ -164,7 +164,7 @@ export class CreddaClient {
     apiKey: string,
     extraHeaders?: Record<string, string>,
   ): Promise<T> {
-    // POSTs retry only when idempotency-keyed — repeating any other write
+    // POSTs retry only when idempotency-keyed: repeating any other write
     // could double-report.
     const retryable = Boolean(extraHeaders && 'Idempotency-Key' in extraHeaders);
     return this.withRetries(retryable, async () => {
@@ -179,13 +179,13 @@ export class CreddaClient {
   }
 
   /**
-   * POST to an endpoint that is deliberately KEYLESS — the caller's capability
+   * POST to an endpoint that is deliberately KEYLESS: the caller's capability
    * is a one-time token carried in the body, not a platform API key. Today that
    * is only the confirmation-response endpoint: the counterparty confirming an
    * outcome is not a Credda customer and holds no key.
    *
    * Never retried. These endpoints are single-use by design, so repeating one
-   * cannot succeed — it would only turn a delivered-but-slow response into a
+   * cannot succeed: it would only turn a delivered-but-slow response into a
    * confusing 409.
    */
   private async postPublic<T>(path: string, body: unknown): Promise<T> {
@@ -198,7 +198,7 @@ export class CreddaClient {
     return res.json() as Promise<T>;
   }
 
-  /** GET a path relative to the API root (not the /api/v1 prefix) — for /.well-known/* discovery docs. */
+  /** GET a path relative to the API root (not the /api/v1 prefix), for /.well-known/* discovery docs. */
   private async getWellKnown<T>(path: string): Promise<T> {
     const res = await fetch(`${this.base}${path}`);
     if (!res.ok) throw await toCreddaError(res, path);
@@ -242,14 +242,14 @@ export class CreddaClient {
   /**
    * The counterparty-confirmed DELIVERY RECEIPTS behind a share token, plus a
    * signed W3C credential of that record (`CreddaDeliveryReceiptCredential`, and
-   * `CreddaAgentDeliveryCredential` when the subject is an agent). Public — the
+   * `CreddaAgentDeliveryCredential` when the subject is an agent). Public: the
    * token is the capability, so an agent can present one string mid-negotiation
    * and the counterparty verifies the credential offline with
    * `verifyVerifiableCredential`.
    *
    * `confirmedDeliveries` counts ONLY outcomes a DISTINCT counterparty attested:
    * an agent's own operator can never confirm its work. This is a delivery
-   * record — not a safety, alignment or capability rating, and never a
+   * record, not a safety, alignment or capability rating, and never a
    * recommendation.
    */
   getDeliveryReceipts(token: string): Promise<DeliveryReceiptsPayload> {
@@ -257,7 +257,7 @@ export class CreddaClient {
   }
 
   /**
-   * The developer plan catalog — the tiers (Starter / Growth / Enterprise), their
+   * The developer plan catalog: the tiers (Starter / Growth / Enterprise), their
    * default key scopes, per-minute rate limits, and feature matrix. This is the
    * same data the API enforces and the pricing page renders, so it never drifts.
    * Public (no key). Each tier carries its published monthly list price
@@ -270,7 +270,7 @@ export class CreddaClient {
   }
 
   /**
-   * The outbound webhook event catalog — every event type the API can send, the
+   * The outbound webhook event catalog: every event type the API can send, the
    * common delivery envelope, an example payload per event, and how to verify a
    * delivery signature. Public (no key). Webhooks are advisory: no event can
    * change anyone's score.
@@ -280,12 +280,12 @@ export class CreddaClient {
   }
 
   /**
-   * The industry outcome-template catalog — for each real-world industry, the
+   * The industry outcome-template catalog: for each real-world industry, the
    * concrete outcomes that matter, the ingest event type to report each one as,
    * a suggested stake, and (the load-bearing part) WHO the third-party witness
    * is. Public (no key), same shape as `/plans` and `/webhooks/events`. Pass an
    * `industry` slug to filter to one set. Guidance only: nothing here scores,
-   * writes, or ranks anyone — a template never sets `isVerified`, only a genuine
+   * writes, or ranks anyone: a template never sets `isVerified`, only a genuine
    * witness confirming the outcome does.
    */
   getOutcomeTemplates(industry?: string): Promise<OutcomeTemplatesCatalog> {
@@ -294,7 +294,7 @@ export class CreddaClient {
   }
 
   /**
-   * The machine-readable error catalog — every stable `code` the API can
+   * The machine-readable error catalog: every stable `code` the API can
    * return, with what it means, what to do about it, and whether a retry can
    * help. Derived server-side from the same catalog the errors are built from,
    * so it can never document a code that doesn't exist (or miss one that does).
@@ -307,7 +307,7 @@ export class CreddaClient {
   /**
    * The API version contract and the dated changelog. Public (no key).
    *
-   * `versioning` says exactly what "v1 is additive-only" guarantees — what can
+   * `versioning` says exactly what "v1 is additive-only" guarantees: what can
    * appear without notice (new endpoints, response fields, optional inputs,
    * enum values, error codes, webhook event types) and what would require a new
    * major version. `deprecations` is empty while nothing is deprecated; a
@@ -319,7 +319,7 @@ export class CreddaClient {
   }
 
   /**
-   * Self-describing enums — every closed value set on the wire (`eventType`,
+   * Self-describing enums: every closed value set on the wire (`eventType`,
    * `stakeLevel`, `scoreBand`, `disputeStatus`, `platformTier`) with a human
    * description per value plus the facts that matter (stake weights, band
    * floors, platform trust multipliers). Derived from the constants the API
@@ -331,13 +331,13 @@ export class CreddaClient {
   }
 
   /**
-   * The adverse-action reason-code catalog — the stable, versioned meaning of
+   * The adverse-action reason-code catalog: the stable, versioned meaning of
    * every reason code the scoring explanation can attribute to a record, each
    * with a consumer-facing description, a `factor` and a `direction`
    * (`adverse` / `supporting`). Built for B2B2C partners that must issue an
    * ECOA / Regulation B statement of specific reasons: read a subject's ranked
    * codes from `getScoreExplain(...)` (`reasonCodes`) and draw the notice from
-   * the adverse ones. Public (no key). Credda supplies the attribution only —
+   * the adverse ones. Public (no key). Credda supplies the attribution only:
    * it is not a creditor and issues no decision or notice.
    */
   getReasonCodes(): Promise<ReasonCodeCatalog> {
@@ -345,11 +345,11 @@ export class CreddaClient {
   }
 
   /**
-   * The benchmark catalog — the legitimate, ledger-derived cohort dimensions
+   * The benchmark catalog: the legitimate, ledger-derived cohort dimensions
    * (`all`, `subjectType`, `verificationDepthBand`, `activityVolumeBand`,
    * `tenureBand`), the statistics returned, and the k-anonymity floor. Public
-   * (no key). A benchmark is a distribution fact — where a score falls relative
-   * to a population — never a rating, ranking, or verdict on a subject.
+   * (no key). A benchmark is a distribution fact (where a score falls relative
+   * to a population), never a rating, ranking, or verdict on a subject.
    */
   getBenchmarks(): Promise<BenchmarkCatalog> {
     return this.get<BenchmarkCatalog>('/benchmarks');
@@ -374,7 +374,7 @@ export class CreddaClient {
   }
 
   /**
-   * Where a single subject sits within a cohort — their percentile rank plus the
+   * Where a single subject sits within a cohort: their percentile rank plus the
    * cohort's aggregate distribution. `available:false` (`insufficient_data`)
    * when the cohort is below the k-anonymity floor, or (`no_score`) when the
    * subject has no computed score yet. The REAL comparison, distinct from the
@@ -412,7 +412,7 @@ export class CreddaClient {
   }
 
   /**
-   * Fetch Credda's `did:web` DID document — issuer identity, verification keys,
+   * Fetch Credda's `did:web` DID document: issuer identity, verification keys,
    * and service endpoints (incl. the trust registry). Public discovery doc, no key.
    */
   getDidDocument(): Promise<DidDocument> {
@@ -428,14 +428,14 @@ export class CreddaClient {
   }
 
   /**
-   * Fetch the OID4VCI Credential Issuer Metadata — the credential
+   * Fetch the OID4VCI Credential Issuer Metadata: the credential
    * configurations Credda can issue into a wallet, and the protocol endpoints
    * that do it. Public discovery doc, no key.
    *
    * This is the only wallet-flow call the SDK wraps on purpose: the token /
    * nonce / credential exchange belongs to the WALLET, which speaks OID4VCI
    * natively and does not need a Credda client to do it. Minting the offer
-   * that starts the flow is a keyed server call — see `createCredentialOffer`.
+   * that starts the flow is a keyed server call. See `createCredentialOffer`.
    */
   getCredentialIssuerMetadata(): Promise<CredentialIssuerMetadata> {
     return this.getWellKnown<CredentialIssuerMetadata>('/.well-known/openid-credential-issuer');
@@ -454,7 +454,7 @@ export class CreddaClient {
 
   /**
    * One Open Badges 3.0 achievement definition by id. 404 for anything not on
-   * the allowlist — an achievement Credda will not sign has no definition to
+   * the allowlist: an achievement Credda will not sign has no definition to
    * resolve. Public (no key).
    */
   getOpenBadgeAchievement(badgeId: string): Promise<OpenBadgeAchievement> {
@@ -462,13 +462,13 @@ export class CreddaClient {
   }
 
   /**
-   * The subject's PROFESSIONAL RECORD behind a public share token — the
+   * The subject's PROFESSIONAL RECORD behind a public share token: the
    * résumé-shaped summary of their verified work record, alongside the usual
    * public trust payload. Public (no key): the token is the subject's own
    * consent to present it.
    *
    * Requests `scope=full` because the API serves the record block ONLY at full
-   * disclosure — a `band`/`minimal` embed must never carry it. The block is
+   * disclosure: a `band`/`minimal` embed must never carry it. The block is
    * fail-safe `null` if it cannot be derived.
    *
    * It describes a record the subject chose to present. It is NOT a hiring
@@ -490,7 +490,7 @@ export class CreddaClient {
   /**
    * Batch score read: latest score + band for up to 100 users in one call, so a
    * platform scoring many counterparties doesn't fan out N requests. Read-only.
-   * Unknown ids come back as `{ userId, error: 'not_found' }` — a partial batch
+   * Unknown ids come back as `{ userId, error: 'not_found' }`: a partial batch
    * still succeeds. Results are in request order.
    */
   getScores(userIds: string[], apiKey: string): Promise<BatchScoresPayload> {
@@ -498,8 +498,8 @@ export class CreddaClient {
   }
 
   /**
-   * List YOUR OWN book of subjects — every subject the calling platform has
-   * reported at least one event for — with each one's current score + band,
+   * List YOUR OWN book of subjects (every subject the calling platform has
+   * reported at least one event for) with each one's current score + band,
    * verification depth, your event counts, last-activity and subject type.
    * Cursor-paginated. Strictly scoped to your own subjects (never another
    * platform's), with test/live isolation; read-only under `scores:read`.
@@ -509,10 +509,10 @@ export class CreddaClient {
    * `registeredBefore`, `hasVerifiedEvents`, `minVerifiedEvents`) and sort by
    * `score` (default) / `registered` / `externalId`. `event`/last-activity
    * counts are scoped to YOUR events. For a whole-book CSV export, add
-   * `format=csv` — a raw-fetch use case (this method returns parsed JSON).
+   * `format=csv`: a raw-fetch use case (this method returns parsed JSON).
    *
    * A subject whose score has not been computed yet comes back with
-   * `finalScore: null` / `scoreBand: null` — never a placeholder number.
+   * `finalScore: null` / `scoreBand: null`, never a placeholder number.
    */
   listUsers(apiKey: string, query: ListUsersQuery = {}): Promise<ListUsersPayload> {
     const qs = bookFilterParams(query);
@@ -528,7 +528,7 @@ export class CreddaClient {
    * Size and shape a segment of your book WITHOUT paging it: how many subjects
    * match, how many are scored, their band mix and median/mean. Takes the same
    * closed filter set as `listUsers`, and is built from the identical
-   * tenant-scoped query — so it can never count a subject the listing would not
+   * tenant-scoped query, so it can never count a subject the listing would not
    * show you. Read-only under `scores:read`.
    *
    * `central.median` / `central.mean` are `null` when nothing in the segment is
@@ -553,7 +553,7 @@ export class CreddaClient {
   /**
    * Evidence-based trust explanation: a deterministic summary + strengths +
    * risks, every claim derived from ledger facts. Deliberately contains NO
-   * verdict — Credda explains evidence; the caller decides against their own
+   * verdict: Credda explains evidence; the caller decides against their own
    * bar. Pass `{ narrative: true }` to also request an advisory AI retelling
    * of the same facts (present only when the API's AI subsystem is enabled).
    */
@@ -566,18 +566,18 @@ export class CreddaClient {
   }
 
   /**
-   * Reliability at dispatch — the compact record read to make before assigning a
+   * Reliability at dispatch, the compact record read to make before assigning a
    * shift: score/band/confidence, verified-evidence counts, `noShowRate`, the
    * on-time component, recency and the top ranked drivers, in a sub-1KB payload.
    *
    * Read-only: it projects the score the engine already computed and counts over
-   * the append-only ledger — it never computes or writes a score, and a subject
+   * the append-only ledger. It never computes or writes a score, and a subject
    * that has never been scored reads `null` rather than triggering a computation.
    *
    * **Evidence, not a verdict.** No field says call / don't-call or fit / unfit;
    * you apply your own criteria and own the decision. If you use this read to
-   * SELECT workers, FCRA (or a local equivalent) may attach to that decision —
-   * scope it with your counsel.
+   * SELECT workers, FCRA (or a local equivalent) may attach to that decision.
+   * Scope it with your counsel.
    */
   getDispatchReliability(userId: string, apiKey: string): Promise<DispatchReliabilityPayload> {
     return this.get<DispatchReliabilityPayload>(
@@ -587,14 +587,14 @@ export class CreddaClient {
   }
 
   /**
-   * Verified Earnings — an attestation of income ALREADY RECORDED on the ledger:
+   * Verified Earnings, an attestation of income ALREADY RECORDED on the ledger:
    * monthly buckets with per-platform breakdown plus stability metrics (median /
    * mean monthly, volatility, months with earnings, longest consecutive run,
    * trailing-12m total).
    *
    * Only counterparty/platform-VERIFIED outcomes are attested; unverified value
    * comes back separately as `unverifiedReported` and is never blended in.
-   * `currency` is always null — amounts are platform-reported units.
+   * `currency` is always null: amounts are platform-reported units.
    *
    * This attests recorded outcomes. It is NOT an income verification for a
    * credit decision, NOT a consumer report, and it makes no representation of
@@ -648,7 +648,7 @@ export class CreddaClient {
   /**
    * The score reframed as named, independently 0–100-scored components
    * (Reliability, Timeliness, Trustworthiness, Verification Confidence,
-   * Consistency, Momentum) — "a modular score, not one number". Pure
+   * Consistency, Momentum): "a modular score, not one number". Pure
    * relabeling of the same data `getScoreExplain` exposes; cannot regress
    * `finalScore`. `{ available: false }` until a score has been computed.
    */
@@ -678,7 +678,7 @@ export class CreddaClient {
   }
 
   /**
-   * Unified, chronological feed of events + score changes for a user — a merge
+   * Unified, chronological feed of events + score changes for a user: a merge
    * view over the Event ledger and score-snapshot history, newest-first and
    * cursor-paginated. Read-only; writes nothing.
    */
@@ -700,7 +700,7 @@ export class CreddaClient {
   /**
    * Read-only what-if projection: what a user's score WOULD become if the given
    * hypothetical events landed on the ledger. Never writes a snapshot or mutates
-   * the ledger — forward-looking and advisory. Requires a platform API key.
+   * the ledger. Forward-looking and advisory. Requires a platform API key.
    */
   projectScore(
     userId: string,
@@ -734,13 +734,13 @@ export class CreddaClient {
    * This platform's own API usage (per day, by status class) vs. its tier rate
    * limit and monthly quota. Requires a key.
    *
-   * Pass a number (trailing window in days, default 7, server max 400) — the
-   * original signature — or `{ from, to }` (inclusive ISO dates, `YYYY-MM-DD`)
+   * Pass a number (trailing window in days, default 7, server max 400; the
+   * original signature) or `{ from, to }` (inclusive ISO dates, `YYYY-MM-DD`)
    * for an explicit statement range; the two are mutually exclusive
    * server-side. Completed days beyond the live 90-day counter retention are
    * served from durable daily rollups; ranges are clamped to the server's
    * history window (default 400 days). CSV export (`?format=csv`) is a
-   * raw-fetch use case — this method returns parsed JSON.
+   * raw-fetch use case: this method returns parsed JSON.
    */
   getUsage(
     apiKey: string,
@@ -782,8 +782,8 @@ export class CreddaClient {
   /**
    * Event analytics over YOUR OWN ledger: volume by day (gaps filled) + by type
    * + the verified AND counterparty-confirmed shares, over a trailing `days`
-   * window (default 30, max 365) or an explicit `from`/`to` range. Aggregate-only
-   * — no subject identifiers. Requires `scores:read`; test/live isolated.
+   * window (default 30, max 365) or an explicit `from`/`to` range. Aggregate-only,
+   * no subject identifiers. Requires `scores:read`; test/live isolated.
    */
   getEventAnalytics(
     apiKey: string,
@@ -796,7 +796,7 @@ export class CreddaClient {
    * Score analytics over YOUR subjects: band distribution, median/mean of
    * current scores, and how many scores moved over the window. Same window
    * controls as {@link getEventAnalytics}. Aggregate-only; requires
-   * `scores:read`; test/live isolated. Read-only — never moves a score.
+   * `scores:read`; test/live isolated. Read-only, never moves a score.
    */
   getScoreAnalytics(
     apiKey: string,
@@ -806,7 +806,7 @@ export class CreddaClient {
   }
 
   /**
-   * Quota transparency — how many calls you have left this month and when it
+   * Quota transparency: how many calls you have left this month and when it
    * resets, without pulling the full per-day usage breakdown. Read-only: this
    * call never counts against your quota. Mirrors the exact numbers the
    * enforcement path uses, so you can self-throttle before ever seeing a 429.
@@ -817,11 +817,11 @@ export class CreddaClient {
   }
 
   /**
-   * Résumé / document advisory — "who confirms it, and how does it affect the
+   * Résumé / document advisory: "who confirms it, and how does it affect the
    * score?" Given the STRUCTURED claims a résumé or work-history document
    * describes, it advises per claim who the third-party witness is, whether it
    * counts as verified as submitted, and (read-only) how adding the claims moves
-   * the score (as-submitted vs. if-all-confirmed). WRITES NOTHING — no event, no
+   * the score (as-submitted vs. if-all-confirmed). WRITES NOTHING: no event, no
    * score, no verification; a claim is verified only when its witness confirms.
    */
   analyzeDocument(
@@ -837,7 +837,7 @@ export class CreddaClient {
   }
 
   /**
-   * Your platform's own activity log — the self-serve audit trail of what your
+   * Your platform's own activity log: the self-serve audit trail of what your
    * keys and config did (events reported, webhooks/monitors changed, share
    * tokens minted, keys issued). Cursor-paginated, newest-first; optional
    * `action` filter and `from`/`to` ISO time bounds. Strictly scoped to your
@@ -880,7 +880,7 @@ export class CreddaClient {
   /**
    * Ingest an outcome event into the append-only ledger. Requires a platform key
    * with `write` (or `events:write`) scope. Pass `opts.idempotencyKey` (a stable
-   * per-operation string) to make retries exactly-once — strongly recommended.
+   * per-operation string) to make retries exactly-once, strongly recommended.
    */
   reportEvent(
     input: ReportEventInput,
@@ -892,7 +892,7 @@ export class CreddaClient {
   }
 
   /**
-   * Report up to 100 events in one call — for streaming many users' activity at
+   * Report up to 100 events in one call: for streaming many users' activity at
    * once instead of a request per event. Partial success: the result lists each
    * item's outcome. Give an item an `idempotencyKey` so a retried batch is
    * exactly-once. Requires a platform key with `events` write scope.
@@ -902,7 +902,7 @@ export class CreddaClient {
   }
 
   /**
-   * Mint (or rotate) a public share token for a user — the capability that powers
+   * Mint (or rotate) a public share token for a user: the capability that powers
    * trust badges, the verify page, and the portable export. Returns an embed
    * snippet. Requires a platform key with `write` (or `scores:write`) scope.
    */
@@ -911,13 +911,13 @@ export class CreddaClient {
   }
 
   /**
-   * Register (or update) an AGENT subject — a non-human scored subject. Writes
+   * Register (or update) an AGENT subject: a non-human scored subject. Writes
    * no events and touches no score: an agent's record runs the identical
    * deterministic formula as a person's.
    *
    * By default the calling platform is declared as the agent's OPERATOR, which
    * means events you report for it are recorded but never counted as verified
-   * evidence — only a distinct counterparty can confirm a delivery. Pass
+   * evidence: only a distinct counterparty can confirm a delivery. Pass
    * `operatedByReportingPlatform: false` (and name the operator) when you are a
    * marketplace reporting on someone else's agent.
    *
@@ -977,7 +977,7 @@ export class CreddaClient {
 
   /**
    * Subscribe an HTTPS endpoint to trust events. The signing secret is returned
-   * ONCE — store it to verify deliveries. Requires `write` (or `webhooks:write`).
+   * ONCE. Store it to verify deliveries. Requires `write` (or `webhooks:write`).
    */
   createWebhook(input: CreateWebhookInput, apiKey: string): Promise<CreateWebhookResult> {
     return this.post<CreateWebhookResult>('/webhooks', input, apiKey);
@@ -1006,7 +1006,7 @@ export class CreddaClient {
   /** Recent delivery attempts for a webhook (debugging), cursor-paginated. */
   /**
    * Replay a past delivery: the stored event body is re-sent, signed with the
-   * current secret and a fresh transport timestamp. Same event id — consumers
+   * current secret and a fresh transport timestamp. Same event id: consumers
    * dedup on it, so this behaves like a duplicate delivery, not a new event.
    */
   replayWebhookDelivery(
@@ -1038,14 +1038,14 @@ export class CreddaClient {
   }
 
   /**
-   * Recent outbound events across ALL of your webhook endpoints — the
+   * Recent outbound events across ALL of your webhook endpoints: the
    * "perform-list" sample-data source automation platforms (Zapier, Make, n8n)
    * need to show users a trigger's output BEFORE any event has fired.
    *
    * Each item is the delivery envelope exactly as sent, so a field mapping
    * built against a sample keeps working on real deliveries. When you have no
    * retained deliveries yet, representative payloads from the event catalog are
-   * returned instead with `isExample: true` and `source: 'examples'` — never
+   * returned instead with `isExample: true` and `source: 'examples'`. Never
    * present those as something that actually happened.
    */
   getRecentWebhookEvents(
@@ -1064,12 +1064,12 @@ export class CreddaClient {
 
   // ── Score monitors (continuous monitoring, server-side, API key) ────────────
   // Edge-triggered threshold/band watches that deliver `monitor.triggered`
-  // through your subscribed webhooks. Notification config only — a monitor
+  // through your subscribed webhooks. Notification config only: a monitor
   // never affects a score. Uses the `webhooks` scope.
 
   /**
    * Create a monitor on one of your users. At least one condition is required:
-   * `belowScore` (downward crossing — also fires on a FIRST score already below
+   * `belowScore` (downward crossing, also fires on a FIRST score already below
    * the threshold), `aboveScore` (upward crossing only), or `onBandChange`.
    */
   createMonitor(input: CreateMonitorInput, apiKey: string): Promise<{ monitor: ScoreMonitor }> {
@@ -1101,20 +1101,20 @@ export class CreddaClient {
     return this.patch<{ monitor: ScoreMonitor }>(`/monitors/${encodeURIComponent(id)}`, patch, apiKey);
   }
 
-  /** Delete a monitor (hard delete — it is config, not ledger data). */
+  /** Delete a monitor (hard delete: it is config, not ledger data). */
   deleteMonitor(id: string, apiKey: string): Promise<void> {
     return this.del(`/monitors/${encodeURIComponent(id)}`, apiKey);
   }
 
   // ── Bulk screenings (async batch score reads, server-side, API key) ─────────
   // Roster-scale batch reads: up to 10,000 ids per job (vs. getScores' 100).
-  // STRICTLY READ-ONLY — a screening never writes events, snapshots, or
+  // STRICTLY READ-ONLY: a screening never writes events, snapshots, or
   // anything score-side. Uses the `scores` scope, same as getScores.
 
   /**
    * Submit an async bulk screening. Ids are deduped server-side; each resolves
    * through the same lookup as `getScores`. Jobs of ≤100 deduped ids are
-   * processed inline — the returned job is usually already COMPLETED; larger
+   * processed inline. The returned job is usually already COMPLETED; larger
    * jobs are queued: poll `getScreening(id)` until COMPLETED, then fetch
    * `getScreeningResults(id)`.
    */
@@ -1142,7 +1142,7 @@ export class CreddaClient {
   /**
    * Fetch the full per-user results of a COMPLETED screening. 409
    * (SCREENING_NOT_COMPLETED) while the job is still queued/running or if it
-   * failed. CSV export (`?format=csv`) is a raw-fetch use case — this method
+   * failed. CSV export (`?format=csv`) is a raw-fetch use case: this method
    * returns parsed JSON.
    */
   getScreeningResults(id: string, apiKey: string): Promise<ScreeningResultsPayload> {
@@ -1151,8 +1151,8 @@ export class CreddaClient {
 
   // ── Data ingress: field-mapping ingest + historical CSV import ─────────────
   // Send YOUR payload shape (no client-side transformation) or backfill a CSV.
-  // Both write through the SAME append-only path as reportEvent — idempotency,
-  // velocity guard, audit trail, asynchronous score recomputation — and neither
+  // Both write through the SAME append-only path as reportEvent (idempotency,
+  // velocity guard, audit trail, asynchronous score recomputation) and neither
   // contains any scoring logic. Uses the `events` scope, same as reportEvent.
   //
   // ⚠️ A mapping is DECLARATIVE DATA, never code: a rule may read a dot-path,
@@ -1165,7 +1165,7 @@ export class CreddaClient {
 
   /**
    * Ingest records in your own shape via a field mapping.
-   * `POST /api/v1/ingest`. Up to 100 records per call; partial success — a bad
+   * `POST /api/v1/ingest`. Up to 100 records per call; partial success: a bad
    * record fails individually with its index and reason.
    */
   ingest(input: IngestInput, apiKey: string): Promise<IngestPayload> {
@@ -1187,7 +1187,7 @@ export class CreddaClient {
     return this.get<{ mapping: StoredMapping }>(`/ingest/mappings/${encodeURIComponent(id)}`, apiKey);
   }
 
-  /** Delete a stored mapping (config, not ledger data — ingested events stay). */
+  /** Delete a stored mapping (config, not ledger data: ingested events stay). */
   deleteMapping(id: string, apiKey: string): Promise<void> {
     return this.del(`/ingest/mappings/${encodeURIComponent(id)}`, apiKey);
   }
@@ -1196,7 +1196,7 @@ export class CreddaClient {
    * Backfill historical outcomes from a CSV. `POST /api/v1/imports`.
    * Mapping paths are COLUMN NAMES. Files of ≤100 rows are processed inline
    * (the returned job usually already reads COMPLETED); larger files are
-   * queued — poll `getImport(id)`, then `getImportErrors(id)` to fix and
+   * queued: poll `getImport(id)`, then `getImportErrors(id)` to fix and
    * re-upload (idempotency keys make that safe). Imported events keep their
    * REAL dates, so scores recompute over true history.
    */
@@ -1227,21 +1227,21 @@ export class CreddaClient {
   //
   // `reportEvent` lets you ASSERT `isVerified: true`. This is the strong form:
   // you PROPOSE an outcome, get a one-time token, deliver it to the named
-  // counterparty over YOUR OWN channel, and the event is written — verified —
+  // counterparty over YOUR OWN channel, and the event is written (verified)
   // only when that distinct party confirms. The confirmation is the third-party
   // witness the score's invariant requires. See docs/CONFIRMATIONS.md.
   //
   // ⚠️ The auth is deliberately ASYMMETRIC. create/list/get/cancel are keyed
-  // (the existing `events` scope — no new scope resource). `previewConfirmation`
+  // (the existing `events` scope, no new scope resource). `previewConfirmation`
   // and `respondToConfirmation` take NO API key: the counterparty holds a token,
-  // not a Credda account. Credda never learns their address — you own delivery.
+  // not a Credda account. Credda never learns their address: you own delivery.
 
   /**
    * Propose an outcome for counterparty confirmation.
    * `POST /api/v1/confirmations`. Writes NO event and touches NO score.
    *
-   * Returns the request plus `confirmationToken` — shown ONCE, deliver it to the
-   * counterparty yourself — and three ways to get them to a decision:
+   * Returns the request plus `confirmationToken` (shown ONCE, deliver it to the
+   * counterparty yourself) and three ways to get them to a decision:
    * `confirmUrl` (Credda's hosted page: zero frontend for you to build),
    * `previewUrl` / `respondUrl` (build your own UI on them). Set `returnUrl` to
    * send them back to you after they decide; it is strictly validated
@@ -1265,16 +1265,16 @@ export class CreddaClient {
   }
 
   /**
-   * The ACTIVATION ENGINE — bulk-create up to 100 confirmation requests in one
+   * The ACTIVATION ENGINE: bulk-create up to 100 confirmation requests in one
    * call. `POST /api/v1/confirmations/batch`. Turn your BOOK of historical
-   * relationships (past jobs, placements, engagements, projects — for a
+   * relationships (past jobs, placements, engagements, projects, for a
    * professional in ANY field) into pending counterparty asks, warming a cold
    * ledger. Each item is exactly a `createConfirmationRequest` body and flows
-   * through the SAME create path, so `isVerified` is still earned only on confirm
-   * — a batch item writes NOTHING to the ledger until its named counterparty
+   * through the SAME create path, so `isVerified` is still earned only on confirm:
+   * a batch item writes NOTHING to the ledger until its named counterparty
    * confirms.
    *
-   * Partial success: `results` lists each item's outcome by `index` — an ok item
+   * Partial success: `results` lists each item's outcome by `index`. An ok item
    * carries its one-time `confirmationToken` + hosted `confirmUrl` (deliver it
    * over your own channel); a failed one carries `error` + `code` (e.g.
    * `CONFIRMATION_SELF`). An over-cap batch is a 400. Pass `opts.idempotencyKey`
@@ -1296,15 +1296,15 @@ export class CreddaClient {
   }
 
   /**
-   * The ACTIVATION ENGINE at book scale — `POST /api/v1/activation/campaigns`.
+   * The ACTIVATION ENGINE at book scale: `POST /api/v1/activation/campaigns`.
    * Submit your whole historical roster/timesheets (up to 500 rows) in ONE call.
-   * Each row becomes an UNCONFIRMED confirmation request — a proposed outcome plus
-   * a one-time token — fanned out to its named counterparty, then
+   * Each row becomes an UNCONFIRMED confirmation request (a proposed outcome plus
+   * a one-time token) fanned out to its named counterparty, then
    * `getActivationCampaign(id)` reports the funnel as those tokens are acted on.
    *
    * INVARIANT: a campaign writes NOTHING to the ledger. Every row flows through the
    * SAME create path a single confirmation uses, so `isVerified` is still earned
-   * only on a genuine counterparty confirm — never here. Partial success: each
+   * only on a genuine counterparty confirm, never here. Partial success: each
    * `results` entry carries a one-time token + hosted `confirmUrl` (ok rows) or an
    * `error` + `code` (failed rows); in-batch duplicate `rowKey`s are dropped into
    * `duplicates`. If NOT ONE row could be created the call is 400
@@ -1327,7 +1327,7 @@ export class CreddaClient {
   }
 
   /**
-   * The campaign funnel — `GET /api/v1/activation/campaigns/{id}`. Derived LIVE
+   * The campaign funnel: `GET /api/v1/activation/campaigns/{id}`. Derived LIVE
    * from the campaign's confirmation requests, so it always reflects the current
    * state as counterparties act on their tokens: `submitted` → `confirmed` /
    * `declined` / `pending` (+ `expired` / `cancelled`), with a factual
@@ -1363,7 +1363,7 @@ export class CreddaClient {
   /**
    * Cancel a still-pending request. `POST /api/v1/confirmations/{id}/cancel`.
    * A request that is already decided or expired returns 409
-   * `CONFIRMATION_NOT_PENDING` — a decision is never rewritten.
+   * `CONFIRMATION_NOT_PENDING`: a decision is never rewritten.
    */
   cancelConfirmation(id: string, apiKey: string): Promise<{ confirmation: ConfirmationRequest }> {
     return this.post<{ confirmation: ConfirmationRequest }>(
@@ -1374,7 +1374,7 @@ export class CreddaClient {
   }
 
   /**
-   * What the counterparty is being asked to confirm — token-gated, **NO API
+   * What the counterparty is being asked to confirm: token-gated, **NO API
    * key**. `GET /api/v1/confirmations/{id}/preview?token=…`.
    *
    * Returns a PII-free subset: never the raw subject id and never the
@@ -1388,12 +1388,12 @@ export class CreddaClient {
   }
 
   /**
-   * The counterparty's decision, presented with the raw token — **NO API key**.
+   * The counterparty's decision, presented with the raw token: **NO API key**.
    * `POST /api/v1/confirmations/{id}/respond`.
    *
    * `confirm` writes the proposed event with `isVerified: true` (earned: a
    * distinct token-holder acted) and returns its `eventId`. `decline` writes
-   * NOTHING — a decline is not evidence of a negative outcome. Single-use: the
+   * NOTHING: a decline is not evidence of a negative outcome. Single-use: the
    * token is spent either way.
    */
   respondToConfirmation(
@@ -1414,20 +1414,20 @@ export class CreddaClient {
   // recordQualification with no witness lands SELF-ATTESTED; a reference is how
   // you ASK the named third party who was actually there to confirm it, turning
   // it VERIFIED. On confirm the qualification is recorded through the same witness
-  // valve every qualification ingress uses — so isVerified is earned in one place,
-  // never asserted — and a qualification NEVER moves the reliability score.
+  // valve every qualification ingress uses (so isVerified is earned in one place,
+  // never asserted) and a qualification NEVER moves the reliability score.
   //
   // ⚠️ Same ASYMMETRIC auth as confirmations. create/list/get/cancel are keyed
-  // (the existing `events` scope — no new scope resource). `previewReference` and
+  // (the existing `events` scope, no new scope resource). `previewReference` and
   // `respondToReference` take NO API key: the counterparty holds a token, not a
-  // Credda account. Credda never learns their address — you own delivery.
+  // Credda account. Credda never learns their address: you own delivery.
 
   /**
    * Propose a résumé claim for a reference to confirm.
    * `POST /api/v1/references`. Records NO qualification and touches NO score.
    *
-   * Returns the request plus `referenceToken` — shown ONCE, deliver it to the
-   * counterparty yourself — and three ways to get them to a decision:
+   * Returns the request plus `referenceToken` (shown ONCE, deliver it to the
+   * counterparty yourself) and three ways to get them to a decision:
    * `referenceUrl` (Credda's hosted page: zero frontend to build),
    * `previewUrl` / `respondUrl` (build your own UI). Set `returnUrl` to send them
    * back after they decide; it is strictly validated server-side.
@@ -1473,7 +1473,7 @@ export class CreddaClient {
   /**
    * Cancel a still-pending request. `POST /api/v1/references/{id}/cancel`.
    * A request that is already decided or expired returns 409
-   * `REFERENCE_NOT_PENDING` — a decision is never rewritten.
+   * `REFERENCE_NOT_PENDING`: a decision is never rewritten.
    */
   cancelReference(id: string, apiKey: string): Promise<{ reference: ReferenceRequest }> {
     return this.post<{ reference: ReferenceRequest }>(
@@ -1484,7 +1484,7 @@ export class CreddaClient {
   }
 
   /**
-   * What the counterparty is being asked to confirm — token-gated, **NO API
+   * What the counterparty is being asked to confirm: token-gated, **NO API
    * key**. `GET /api/v1/references/{id}/preview?token=…`.
    *
    * Returns a PII-free subset: never the raw subject id and never the
@@ -1497,12 +1497,12 @@ export class CreddaClient {
   }
 
   /**
-   * The counterparty's decision, presented with the raw token — **NO API key**.
+   * The counterparty's decision, presented with the raw token: **NO API key**.
    * `POST /api/v1/references/{id}/respond`.
    *
    * `confirm` records the qualification with `isVerified: true` (earned: a
    * distinct third party who was there confirmed the claim) and returns its
-   * `eventId`. `decline` records NOTHING — a decline is not evidence against the
+   * `eventId`. `decline` records NOTHING: a decline is not evidence against the
    * claim. Single-use: the token is spent either way. A qualification never moves
    * the reliability score.
    */
@@ -1521,7 +1521,7 @@ export class CreddaClient {
   // A policy watches ONE condition on one subject (`userId`) or on all of your
   // subjects (`appliesToAll`) and delivers `policy.threshold_crossed` through
   // your webhooks, edge-triggered, with the deterministic evidence attached.
-  // Notification config, so it uses the existing `webhooks` scope — and, like a
+  // Notification config, so it uses the existing `webhooks` scope, and, like a
   // monitor, a policy never reads into, blocks, or changes a score computation.
 
   /**
@@ -1553,7 +1553,7 @@ export class CreddaClient {
 
   /**
    * Retune a policy (name / direction / threshold / component / band /
-   * isActive). `PATCH /api/v1/policies/{id}`. The `metric` is IMMUTABLE — to
+   * isActive). `PATCH /api/v1/policies/{id}`. The `metric` is IMMUTABLE: to
    * change what is watched, delete and recreate. Pass `null` to clear a
    * nullable condition field; the merged result is re-validated with the same
    * validator create uses, so an update can't leave a shape create would reject.
@@ -1566,7 +1566,7 @@ export class CreddaClient {
     return this.patch<{ policy: ThresholdPolicy }>(`/policies/${encodeURIComponent(id)}`, patch, apiKey);
   }
 
-  /** Delete a policy (hard delete — it is config, not ledger data). */
+  /** Delete a policy (hard delete: it is config, not ledger data). */
   deletePolicy(id: string, apiKey: string): Promise<void> {
     return this.del(`/policies/${encodeURIComponent(id)}`, apiKey);
   }
@@ -1579,7 +1579,7 @@ export class CreddaClient {
   //
   // ⚠️ THE BRIGHT LINE: this can never move the Reliability Score. Qualification
   // events are structurally excluded from the score formula. It counts WHETHER a
-  // claim is verified, never how prestigious it is — no school, employer, degree
+  // claim is verified, never how prestigious it is: no school, employer, degree
   // or credential is ranked or weighted, deliberately.
 
   /**
@@ -1587,7 +1587,7 @@ export class CreddaClient {
    * counts, and the share of the whole claimed record that is independently
    * verified. `GET /api/v1/users/{id}/verified-profile`.
    *
-   * `verificationDepth` is `null` — not 0 — when nothing is claimed. This
+   * `verificationDepth` is `null` (not 0) when nothing is claimed. This
    * describes what is verified; it is not an assessment of the person.
    */
   getVerifiedProfile(userId: string, apiKey: string): Promise<VerifiedProfilePayload> {
@@ -1604,7 +1604,7 @@ export class CreddaClient {
    * the witness rule, never by you: supply `verifiedBy` naming the genuine third
    * party that confirmed it. Absent (or naming the subject themselves) the claim
    * still lands on the ledger but as self-attested, with `verificationNote`
-   * saying why — it does not raise verification depth.
+   * saying why: it does not raise verification depth.
    *
    * `issuer`/`label` are carried for display and are never read by the measure.
    * Writes nothing score-side and never enqueues a recompute.
@@ -1612,8 +1612,8 @@ export class CreddaClient {
    * Pass `claimRef` to give the claim a stable identity so syncing it twice
    * (self-attested at creation, verified at confirmation) counts ONCE,
    * `{ claimRef, retract: true }` to withdraw a claim the subject deleted, and
-   * `{ claimRef, supersedes: true }` to RETIRE an earlier confirmed instance —
-   * an expired license, a downgraded credential — so it stops resolving
+   * `{ claimRef, supersedes: true }` to RETIRE an earlier confirmed instance
+   * (an expired license, a downgraded credential), so it stops resolving
    * verified without anything being deleted and without losing when it was last
    * confirmed. Re-syncing the same `claimRef` on its own does NOT replace the
    * earlier instance: the ledger appends and verified wins, so a re-sync that is
@@ -1632,7 +1632,7 @@ export class CreddaClient {
   }
 
   /**
-   * Bulk-import a claimed professional record — the onboarding accelerator.
+   * Bulk-import a claimed professional record: the onboarding accelerator.
    * `POST /api/v1/users/{id}/qualifications/import`.
    *
    * Seed education, employment, skills and certifications in one call instead of
@@ -1641,7 +1641,7 @@ export class CreddaClient {
    * decided by the witness rule per claim, never hardcoded: import your own
    * history with no `verifiedBy` and every claim lands self-attested, which
    * LOWERS verification depth until each is independently confirmed. Up to 100
-   * claims per call (more is a 400). Partial-success — each item carries its own
+   * claims per call (more is a 400). Partial-success: each item carries its own
    * `ok`/`error`. Writes nothing score-side.
    */
   importQualifications(
@@ -1660,13 +1660,13 @@ export class CreddaClient {
   //
   // A worker-OWNED, résumé-shaped summary of a VERIFIED work record: reliability
   // band, verified-outcome counts, verification depth, tenure. Pure derivation
-  // over the ledger the score already reads — no new scoring logic, nothing here
+  // over the ledger the score already reads: no new scoring logic, nothing here
   // can move a score.
   //
   // ⚠️ It describes the record the subject chose to present. It is NOT a hiring,
   // promotion or employment recommendation, NOT a background check, and NOT a
   // consumer report. Selling a score into an employment DECISION is a standing
-  // refusal — the disclosures travel on every payload for that reason.
+  // refusal: the disclosures travel on every payload for that reason.
 
   /**
    * The subject's professional record. `GET /api/v1/users/{id}/professional-record`.
@@ -1682,15 +1682,15 @@ export class CreddaClient {
   }
 
   /**
-   * The subject's whole verified professional record — reliability + verified
-   * experience + tenure + itemized qualifications — as an OPEN JSON Resume
+   * The subject's whole verified professional record (reliability + verified
+   * experience + tenure + itemized qualifications) as an OPEN JSON Resume
    * document (jsonresume.org), so it drops into an ATS/HRIS or résumé tool
    * without a bespoke Credda integration. Every item is flagged verified vs
    * self-reported (a per-item `credda` extension) and verified items anchor to
    * the subject's public proof URL. A `meta.credda` block carries the reliability
    * summary, verification depth and disclosures. Requires a platform API key.
    *
-   * It describes a record — never a hiring verdict, a background check, or a
+   * It describes a record, never a hiring verdict, a background check, or a
    * consumer report.
    */
   getCareerExport(userId: string, apiKey: string): Promise<CareerExportDocument> {
@@ -1701,7 +1701,7 @@ export class CreddaClient {
   }
 
   /**
-   * The subject's career export behind a public share token — the same JSON
+   * The subject's career export behind a public share token: the same JSON
    * Resume document, consented via the token. Public (no key): the token is the
    * subject's own consent to present it. Verified items anchor to this same
    * public proof URL.
@@ -1715,11 +1715,11 @@ export class CreddaClient {
   // ── Worker Reliability Report ──────────────────────────────────────────────
   //
   // One consolidated read a staffing agency or employer weighs before placing or
-  // hiring a worker — an AGGREGATION of what the engine already computed
+  // hiring a worker: an AGGREGATION of what the engine already computed
   // (reliability, metrics, verified experience + tenure, ranked drivers, recent
   // outcomes, an optional coarse benchmark). It computes no new score.
   //
-  // ⚠️ It is EVIDENCE a reader weighs against their own criteria — NOT a hire /
+  // ⚠️ It is EVIDENCE a reader weighs against their own criteria, NOT a hire /
   // place / rank / approve verdict, a background check, or a consumer report. The
   // disclosures travel on every payload.
 
@@ -1748,7 +1748,7 @@ export class CreddaClient {
   }
 
   /**
-   * The reliability report behind a public share token — the worker's own
+   * The reliability report behind a public share token: the worker's own
    * consent to hand their dossier to a prospective employer.
    * `GET /api/v1/verify/{token}/reliability-report`. Public (NO key): the token
    * is the capability. `reliabilityReport` is `null` if it cannot be derived.
@@ -1770,7 +1770,7 @@ export class CreddaClient {
    * Mint a signed Professional Record Credential (W3C VC-JWT, type
    * `CreddaProfessionalRecordCredential`) so the subject can PROVE their
    * verified record without the verifier calling Credda. Same Ed25519 issuer
-   * key / did:web / StatusList2021 revocation as every other Credda VC — verify
+   * key / did:web / StatusList2021 revocation as every other Credda VC. Verify
    * it with `verifyVerifiableCredential()`.
    *
    * Also returns an "Add to LinkedIn" certification deep link. LinkedIn does not
@@ -1807,13 +1807,13 @@ export class CreddaClient {
    * `POST /api/v1/test/seed`.
    *
    * Idempotent: a subject that already has events is left untouched
-   * (`alreadySeeded: true`) rather than doubled — the ledger is append-only, so
+   * (`alreadySeeded: true`) rather than doubled: the ledger is append-only, so
    * re-seeding would otherwise silently change a score. Call
    * {@link resetSandbox} to start over.
    *
    * Every seeded id starts with `sbx_` and every seeded event carries
    * `metadata.synthetic: true`. Each subject is described by the SHAPE of its
-   * record, never a promised band — the number depends on your own platform
+   * record, never a promised band: the number depends on your own platform
    * trust tier, exactly as it would in production.
    */
   seedSandbox(apiKey: string): Promise<SandboxSeedResult> {
@@ -1849,7 +1849,7 @@ function queryString(query: Record<string, string | number | undefined>): string
 /**
  * Serialize the closed book filter set. Shared by `listUsers` and
  * `getBookSummary` so the two surfaces can never disagree about the filter
- * vocabulary — the same reason the server parses both with one function.
+ * vocabulary, the same reason the server parses both with one function.
  */
 function bookFilterParams(query: BookFilterQuery): URLSearchParams {
   const qs = new URLSearchParams();
@@ -1877,7 +1877,7 @@ function analyticsQuery(window?: number | { days?: number; from?: string; to?: s
 export interface CreddaErrorContext {
   /** The API's stable machine code (see GET /api/v1/errors). */
   code?: string;
-  /** Structured context — e.g. per-field problems on a VALIDATION_ERROR. */
+  /** Structured context, e.g. per-field problems on a VALIDATION_ERROR. */
   details?: unknown;
   /** Correlation id from `X-Request-Id`. Log it; support asks for it first. */
   requestId?: string;
@@ -1889,7 +1889,7 @@ export interface CreddaErrorContext {
  * A non-2xx response.
  *
  * Beyond the status and message it carries the API's own `code`, any structured
- * `details`, and — the reason this matters for support — the **`requestId`**.
+ * `details`, and (the reason this matters for support) the **`requestId`**.
  * Log `err.requestId` and a Credda engineer can find the exact request in our
  * logs; without it, debugging starts with "describe what happened".
  */
@@ -1955,11 +1955,11 @@ export interface EarningsWindow {
   months: number;
 }
 
-/** GET /api/v1/users/:id/earnings — the full attestation. */
+/** GET /api/v1/users/:id/earnings: the full attestation. */
 export interface VerifiedEarnings {
   userId?:         string;
   earningsVersion: string;
-  /** Always null — the ledger records no currency; amounts are platform-reported units. */
+  /** Always null: the ledger records no currency; amounts are platform-reported units. */
   currency:        null;
   note:            string;
   window:          EarningsWindow;
@@ -1975,11 +1975,11 @@ export interface VerifiedEarnings {
     monthsWithEarnings:       number;
     medianMonthly:            number;
     meanMonthly:              number;
-    /** Volatility. Null when there is no income to vary — never coerced to 0. */
+    /** Volatility. Null when there is no income to vary, never coerced to 0. */
     coefficientOfVariation:   number | null;
     longestConsecutiveMonths: number;
   };
-  /** Reported but NOT attested — never blended into any attested figure. */
+  /** Reported but NOT attested, never blended into any attested figure. */
   unverifiedReported: { gross: number; eventCount: number };
   excluded: { disputedEvents: number; disputedValue: number; valuelessEvents: number };
   coverage: { verifiedShare: number | null; selfReportedShare: number | null };
@@ -1987,7 +1987,7 @@ export interface VerifiedEarnings {
   disclosures: string[];
 }
 
-/** GET /api/v1/users/:id/earnings/summary — the compact lender-facing view. */
+/** GET /api/v1/users/:id/earnings/summary: the compact lender-facing view. */
 export interface EarningsSummary {
   userId?:                  string;
   earningsVersion:          string;
@@ -2005,7 +2005,7 @@ export interface EarningsSummary {
   disclosures:              string[];
 }
 
-/** POST /api/v1/users/:id/earnings/credential — a signed, revocable earnings VC. */
+/** POST /api/v1/users/:id/earnings/credential: a signed, revocable earnings VC. */
 export interface EarningsCredentialResult {
   format:          'jwt_vc_json';
   credentialVc:    string;
@@ -2050,7 +2050,7 @@ export interface PlanFeature {
   label: string;
 }
 
-/** Public payload from GET /api/v1/plans — the tier catalog, with official prices. */
+/** Public payload from GET /api/v1/plans: the tier catalog, with official prices. */
 export interface PlanCatalog {
   pricing:  string;        // 'official'
   note:     string;
@@ -2066,7 +2066,7 @@ export interface WebhookEventDoc {
   example:     Record<string, unknown>;
 }
 
-/** Public payload from GET /api/v1/webhooks/events — the event catalog. */
+/** Public payload from GET /api/v1/webhooks/events: the event catalog. */
 export interface WebhookEventCatalog {
   envelope:   Record<string, string>;
   signing:    string;
@@ -2078,7 +2078,7 @@ export interface WebhookEventCatalog {
 /** One dated change from GET /api/v1/changelog. */
 export interface ChangelogEntry {
   id:         string;
-  /** ISO date (YYYY-MM-DD). The release date — the API deploys on merge. */
+  /** ISO date (YYYY-MM-DD). The release date: the API deploys on merge. */
   date:       string;
   category:   'added' | 'changed' | 'deprecated' | 'fixed' | 'security';
   summary:    string;
@@ -2098,7 +2098,7 @@ export interface DeprecationNotice {
   infoUrl?:     string;
 }
 
-/** GET /api/v1/changelog — the version contract plus every dated change. */
+/** GET /api/v1/changelog: the version contract plus every dated change. */
 export interface ApiChangelog {
   apiVersion:   string;   // 'v1'
   note:         string;
@@ -2137,7 +2137,7 @@ export interface ErrorCodeDoc {
   retryable:   boolean;
 }
 
-/** GET /api/v1/errors — the machine-readable error catalog. */
+/** GET /api/v1/errors: the machine-readable error catalog. */
 export interface ErrorCatalog {
   envelope:      Record<string, string>;
   retryGuidance: string;
@@ -2161,7 +2161,7 @@ export interface EnumDoc {
   values:      EnumValueDoc[];
 }
 
-/** GET /api/v1/enums — every closed value set the API accepts or returns. */
+/** GET /api/v1/enums: every closed value set the API accepts or returns. */
 export interface EnumCatalog {
   note:  string;
   enums: EnumDoc[];
@@ -2196,7 +2196,7 @@ export interface ReasonCodeDoc {
   description: string;
 }
 
-/** GET /api/v1/reason-codes — the adverse-action reason-code catalog. */
+/** GET /api/v1/reason-codes: the adverse-action reason-code catalog. */
 export interface ReasonCodeCatalog {
   reasonCodesVersion: string;
   formulaVersion:     string;
@@ -2288,8 +2288,8 @@ export interface ReasonCodeResult {
 export interface TrustPayload {
   token:             string;
   /**
-   * Current canonical score, or **null when no score has been computed yet**
-   * — never a placeholder. A `50` fallback used to stand in here; the engine
+   * Current canonical score, or **null when no score has been computed yet**,
+   * never a placeholder. A `50` fallback used to stand in here; the engine
    * never produces it for an unscored subject (a new record anchors near
    * 20, "Provisional") and it bands as "Proven".
    */
@@ -2351,21 +2351,21 @@ export interface AgentSubject {
  */
 export interface DeliveryRecord {
   deliveries: number;
-  /** Deliveries a DISTINCT counterparty confirmed — the only ones that are evidence. */
+  /** Deliveries a DISTINCT counterparty confirmed: the only ones that are evidence. */
   confirmedDeliveries: number;
   unconfirmedDeliveries: number;
-  /** Recorded by the agent's own declared operator — never confirmed evidence. */
+  /** Recorded by the agent's own declared operator, never confirmed evidence. */
   selfAttestedDeliveries: number;
   failures: number;
   disputes: number;
-  /** Null when nothing is confirmed yet — an absent rate is not a perfect one. */
+  /** Null when nothing is confirmed yet: an absent rate is not a perfect one. */
   onTimeConfirmedDeliveries: number | null;
   onTimeRate: number | null;
   firstRecordedAt: string | null;
   lastRecordedAt: string | null;
 }
 
-/** What a delivery record is, and — stated in the payload itself — what it is not. */
+/** What a delivery record is, and (stated in the payload itself) what it is not. */
 export interface DeliveryRecordDisclaimer {
   isA: string;
   isNot: string[];
@@ -2394,7 +2394,7 @@ export interface DeliveryReceiptsPayload {
   agent: AgentDeclaration | null;
   deliveryRecord: DeliveryRecord;
   score: {
-    /** Null when the subject has no computed score — never a placeholder. */
+    /** Null when the subject has no computed score, never a placeholder. */
     finalScore: number | null;
     /** Band for `finalScore`; null when there is no score to band. */
     scoreBand: string | null;
@@ -2436,7 +2436,7 @@ export interface RegistryIssuer {
   jwksUri: string;
 }
 
-/** Trust registry from GET /.well-known/credda-trust-registry.json — Credda's own issuer plus any federated ones. */
+/** Trust registry from GET /.well-known/credda-trust-registry.json: Credda's own issuer plus any federated ones. */
 export interface TrustRegistry {
   version: string;
   issuers: RegistryIssuer[];
@@ -2467,7 +2467,7 @@ export interface CredentialOfferResult {
     credential_configuration_ids: string[];
     grants: Record<string, Record<string, unknown>>;
   };
-  /** `openid-credential-offer://?credential_offer=…` — render as a QR code or a link. */
+  /** `openid-credential-offer://?credential_offer=…`: render as a QR code or a link. */
   credentialOfferUri: string;
   /** Lifetime of the single-use pre-authorized code, in seconds. */
   expiresIn: number;
@@ -2482,7 +2482,7 @@ export interface TrustExport {
   exportedAt: string;
   subject: { token: string };
   score: {
-    /** Null when the subject has no computed score — never a placeholder. */
+    /** Null when the subject has no computed score, never a placeholder. */
     finalScore: number | null;
     /** Band for `finalScore`; null when there is no score to band. */
     scoreBand: string | null;
@@ -2513,8 +2513,8 @@ export interface ScoreBreakdown {
 export interface ScorePayload {
   userId:         string;
   /**
-   * Current canonical score, or **null when no score has been computed yet**
-   * — never a placeholder. A `50` fallback used to stand in here; the engine
+   * Current canonical score, or **null when no score has been computed yet**,
+   * never a placeholder. A `50` fallback used to stand in here; the engine
    * never produces it for an unscored subject (a new record anchors near
    * 20, "Provisional") and it bands as "Proven".
    */
@@ -2548,7 +2548,7 @@ export interface DispatchFactor {
  * Payload from `GET /api/v1/users/:id/reliability?context=dispatch`.
  *
  * Every nullable field is null because the data genuinely does not exist (an
- * unscored subject, an empty ledger) — never a placeholder zero.
+ * unscored subject, an empty ledger), never a placeholder zero.
  */
 export interface DispatchReliabilityPayload {
   userId: string;
@@ -2623,7 +2623,7 @@ export interface BatchScoresPayload {
 
 /**
  * The filter vocabulary shared by `GET /api/v1/users` and
- * `GET /api/v1/users/summary`. A CLOSED set on purpose — there is deliberately
+ * `GET /api/v1/users/summary`. A CLOSED set on purpose: there is deliberately
  * no free-form query language, because the closed set is what lets the server
  * guarantee tenant scoping for every combination.
  */
@@ -2640,11 +2640,11 @@ export interface BookFilterQuery {
   /** true = only subjects whose score is frozen by a velocity flag. */
   scoreFrozen?:       boolean;
   subjectType?:       'PERSON' | 'AGENT' | 'ORGANIZATION';
-  /** ISO instant — only subjects with ≥1 of YOUR events at/after it. */
+  /** ISO instant: only subjects with ≥1 of YOUR events at/after it. */
   activeSince?:       string;
-  /** ISO instant — only subjects first seen in the ledger at/after it (inclusive). */
+  /** ISO instant: only subjects first seen in the ledger at/after it (inclusive). */
   registeredSince?:   string;
-  /** ISO instant — only subjects first seen in the ledger BEFORE it (exclusive). */
+  /** ISO instant: only subjects first seen in the ledger BEFORE it (exclusive). */
   registeredBefore?:  string;
   hasVerifiedEvents?: boolean;
   minVerifiedEvents?: number;
@@ -2658,12 +2658,12 @@ export interface ListUsersQuery extends BookFilterQuery {
   cursor?:            string;
 }
 
-/** One subject in your book (GET /api/v1/users) — operational fields only. */
+/** One subject in your book (GET /api/v1/users), operational fields only. */
 export interface SubjectSummary {
   externalId:         string;
   subjectType:        string;
   /**
-   * Current canonical score, or **null when no score has been computed yet** —
+   * Current canonical score, or **null when no score has been computed yet**,
    * never a placeholder. Filter these in or out with `hasScore`.
    */
   finalScore:         number | null;
@@ -2679,7 +2679,7 @@ export interface SubjectSummary {
   computedAt:         string | null;
 }
 
-/** Payload from GET /api/v1/users — a cursor-paginated page of your subjects. */
+/** Payload from GET /api/v1/users: a cursor-paginated page of your subjects. */
 export interface ListUsersPayload {
   data:       SubjectSummary[];
   count:      number;
@@ -2696,7 +2696,7 @@ export interface BookSummaryBand {
 }
 
 /**
- * Payload from GET /api/v1/users/summary — counts and score shape for a segment
+ * Payload from GET /api/v1/users/summary: counts and score shape for a segment
  * of your book, defined by the same closed filter set as `listUsers`.
  *
  * Nothing is faked: `central` members are null when nothing in the segment is
@@ -2788,7 +2788,7 @@ export interface ScoreExplainPayload {
   /** Present ONLY for an unverified record whose live position is set by the
    *  recency-weighted provisional band. A counterparty-verified record is
    *  anchored by its verified outcomes (which carry no date) and does NOT decay
-   *  with inactivity, so it returns `null` here — this is never a claim that a
+   *  with inactivity, so it returns `null` here: this is never a claim that a
    *  verified score "softens with time". */
   recencyWarning?: string | null;
   computedAt?:     string;
@@ -2869,7 +2869,7 @@ export interface ScoreComponentsPayload {
   formulaVersion?: string;
 }
 
-/** The public benchmark catalog — cohort dimensions + the k-anonymity guarantee. */
+/** The public benchmark catalog: cohort dimensions + the k-anonymity guarantee. */
 export interface BenchmarkCatalog {
   benchmarkVersion: string;
   formulaVersion:   string;
@@ -2891,7 +2891,7 @@ export interface BenchmarkStatistics {
   p90:    number;
 }
 
-/** One cohort's distribution — either available with numbers, or suppressed. */
+/** One cohort's distribution: either available with numbers, or suppressed. */
 export type BenchmarkCohort =
   | {
       available: true;
@@ -2909,7 +2909,7 @@ export type BenchmarkCohort =
       minimumCohortSize: number;
     };
 
-/** GET /benchmarks/distribution — one cohort (with `cohort`) or a whole dimension. */
+/** GET /benchmarks/distribution: one cohort (with `cohort`) or a whole dimension. */
 export type BenchmarkDistributionPayload =
   | ({ benchmarkVersion: string; formulaVersion: string } & BenchmarkCohort)
   | {
@@ -2920,7 +2920,7 @@ export type BenchmarkDistributionPayload =
       cohorts: BenchmarkCohort[];
     };
 
-/** GET /users/:id/benchmark — where the subject sits within its cohort. */
+/** GET /users/:id/benchmark: where the subject sits within its cohort. */
 export type UserBenchmarkPayload =
   | {
       userId: string;
@@ -2969,7 +2969,7 @@ export interface TimelinePayload {
 }
 
 /**
- * Event types the read-only what-if projection accepts — the FULL vocabulary,
+ * Event types the read-only what-if projection accepts: the FULL vocabulary,
  * a superset of `IngestEventType`. A projection writes nothing, so the dispute
  * outcomes the API produces itself are modellable too, and so is
  * `CONTRACT_BREACHED` (the strongest negative signal in the formula).
@@ -3143,11 +3143,11 @@ export type ConfirmerType = 'INDIVIDUAL' | 'EMPLOYER' | 'PLATFORM';
 
 /** One event in a batch (reportEvents / POST /events/batch). */
 export interface BatchEventInput extends ReportEventInput {
-  /** Per-item idempotency key (8–255 chars) — a replay is a no-op returning the original event id. */
+  /** Per-item idempotency key (8–255 chars): a replay is a no-op returning the original event id. */
   idempotencyKey?: string;
 }
 
-/** Result of reportEvents — partial success, one entry per input event. */
+/** Result of reportEvents: partial success, one entry per input event. */
 export interface BatchEventsResult {
   total:     number;
   created:   number;
@@ -3193,7 +3193,7 @@ export interface ScoreMonitor {
   updatedAt: string;
 }
 
-/** Body for createMonitor — at least one condition is required. */
+/** Body for createMonitor: at least one condition is required. */
 export interface CreateMonitorInput {
   /** The platform's external user id. */
   userId: string;
@@ -3235,7 +3235,7 @@ export interface ScreeningJob {
 }
 
 /**
- * One screened user. Score fields are present only when `found` — and are
+ * One screened user. Score fields are present only when `found`, and are
  * **null when the subject exists but has no computed score**. `found` answers
  * "does this subject exist"; `score` answers "has it been scored". A `50`
  * placeholder used to conflate the two.
@@ -3285,7 +3285,7 @@ export type IngestFieldRule =
 
 /**
  * How to reach Credda's event fields from YOUR record shape.
- * `verifiedBy` is not an event field — it is the counterparty/witness
+ * `verifiedBy` is not an event field: it is the counterparty/witness
  * identifier that licenses `isVerified: true`. Without it a record still
  * ingests, with `isVerified: false` and a warning.
  */
@@ -3318,7 +3318,7 @@ export interface IngestResultItem {
   status: 'created' | 'duplicate' | 'failed';
   eventId?: string;
   error?: string;
-  /** Non-fatal notes — most commonly an `isVerified` downgrade. */
+  /** Non-fatal notes: most commonly an `isVerified` downgrade. */
   warnings?: string[];
 }
 
@@ -3362,7 +3362,7 @@ export type ImportStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 export interface ImportJob {
   id: string;
   status: ImportStatus;
-  /** Data rows in the file (never truncated — an over-cap file is refused). */
+  /** Data rows in the file (never truncated: an over-cap file is refused). */
   totalRows: number;
   createdCount: number;
   /** Rows already present under their idempotency key (a safe re-upload). */
@@ -3427,7 +3427,7 @@ export interface WebhookConfig {
 
 export interface CreateWebhookResult {
   webhook: WebhookConfig;
-  /** Signing secret — shown ONCE. Store it to verify deliveries. */
+  /** Signing secret: shown ONCE. Store it to verify deliveries. */
   secret: string;
 }
 
@@ -3450,7 +3450,7 @@ export interface WebhookDelivery {
   webhookId: string;
   eventId: string;
   eventType: string;
-  /** 1-based attempt number — retries with backoff log one row per attempt. */
+  /** 1-based attempt number: retries with backoff log one row per attempt. */
   attempt?: number;
   success: boolean;
   statusCode: number | null;
@@ -3474,7 +3474,7 @@ export interface RecentWebhookEventDelivery {
  * sent, plus provenance.
  */
 export interface RecentWebhookEvent {
-  /** Event id — stable across retries and replays. Dedupe on this. */
+  /** Event id: stable across retries and replays. Dedupe on this. */
   id: string;
   type: WebhookSubscriptionEvent;
   livemode: boolean;
@@ -3513,7 +3513,7 @@ export interface ReportEventResult {
   dispute?: Record<string, unknown>;
 }
 
-/** Payload from GET /api/v1/users/:id/risk — advisory only, never affects the score. */
+/** Payload from GET /api/v1/users/:id/risk: advisory only, never affects the score. */
 export interface RiskPayload {
   riskLevel:  string;
   riskScore:  number;
@@ -3529,7 +3529,7 @@ export interface ActivityEntry {
   id: string;
   /** Audit action, e.g. EVENT_CREATED, WEBHOOK_UPDATED, SHARE_TOKEN_MINTED. */
   action: string;
-  /** The action's recorded detail, as written — always includes your platformId. */
+  /** The action's recorded detail, as written: always includes your platformId. */
   payload: Record<string, unknown>;
   createdAt: string;
 }
@@ -3540,7 +3540,7 @@ export interface ActivityPayload {
   nextCursor: string | null;
 }
 
-/** One exported event (GET /api/v1/events/export) — your own recorded fields. */
+/** One exported event (GET /api/v1/events/export): your own recorded fields. */
 export interface ExportedEvent {
   id: string;
   /** Your own external user id. */
@@ -3572,7 +3572,7 @@ export interface UsageDay {
   serverError: number;
 }
 
-/** Payload from GET /api/v1/usage — the calling platform's own consumption. */
+/** Payload from GET /api/v1/usage: the calling platform's own consumption. */
 export interface UsagePayload {
   platform:        { id: string; name: string; tier: string };
   rateLimitPerMin: number;
@@ -3612,11 +3612,11 @@ export type AnalyticsWindow =
   | { from: string; to: string; requestedFrom: string; requestedTo: string; truncated: boolean; maxDays: number };
 
 /**
- * `verified` counts the raw `isVerified` flag — on a directly-reported event that
+ * `verified` counts the raw `isVerified` flag: on a directly-reported event that
  * is the reporting platform's OWN assertion. `confirmed` counts only events a
  * DISTINCT counterparty wrote by acting on a one-time confirmation token, so it
  * is the third-party evidence density of an integration. `confirmed` is always a
- * subset of `verified`. Shares are null when the bucket has no events — never a
+ * subset of `verified`. Shares are null when the bucket has no events, never a
  * placeholder 0.
  */
 export interface EventAnalyticsBucket {
@@ -3666,7 +3666,7 @@ export interface SandboxSeedSubject {
 /** Payload from POST /api/v1/test/seed. */
 export interface SandboxSeedResult {
   seeded: boolean;
-  /** Always false — this is sandbox data. */
+  /** Always false: this is sandbox data. */
   livemode: boolean;
   seedVersion: number;
   subjectsCreated: number;
@@ -3706,7 +3706,7 @@ export type ConfirmationDecision = 'confirm' | 'decline';
 
 /**
  * Body for `createConfirmationRequest`. `eventType` is one of the SAME types a
- * platform may report directly (`IngestEventType`) — a counterparty can confirm
+ * platform may report directly (`IngestEventType`): a counterparty can confirm
  * a positive outcome or a negative one with equal validity.
  */
 export interface CreateConfirmationInput {
@@ -3719,7 +3719,7 @@ export interface CreateConfirmationInput {
   completedAt?:      string;
   metadata?:         Record<string, unknown>;
   /**
-   * Your opaque matching key for the counterparty (an id, a reference — not
+   * Your opaque matching key for the counterparty (an id, a reference, not
    * necessarily an address). It must not name the subject: a subject cannot be
    * its own independent witness (400 `CONFIRMATION_SELF`).
    */
@@ -3772,9 +3772,9 @@ export interface ConfirmationRequest {
 /** Result of `createConfirmationRequest`. The token is returned ONCE. */
 export interface ConfirmationCreateResult {
   confirmation:      ConfirmationRequest;
-  /** Raw one-time token — deliver it to the counterparty over your own channel. */
+  /** Raw one-time token: deliver it to the counterparty over your own channel. */
   confirmationToken: string;
-  /** Credda's hosted confirmation page — the zero-frontend path. */
+  /** Credda's hosted confirmation page: the zero-frontend path. */
   confirmUrl:        string;
   /** The API preview, for platforms building their own confirmation UI. */
   previewUrl:        string;
@@ -3783,7 +3783,7 @@ export interface ConfirmationCreateResult {
 }
 
 /**
- * Result of `createConfirmationBatch` — partial success, one entry per input
+ * Result of `createConfirmationBatch`: partial success, one entry per input
  * request. An ok item carries its one-time token + hosted confirmUrl; a failed
  * one carries the reason + code. Nothing is written to the ledger by any item.
  */
@@ -3799,7 +3799,7 @@ export interface ConfirmationBatchResult {
     id?:                string;
     /** ok items: PENDING. */
     status?:            ConfirmationStatus;
-    /** ok items: the one-time token — shown ONCE, deliver it to the counterparty. */
+    /** ok items: the one-time token. Shown ONCE, deliver it to the counterparty. */
     confirmationToken?: string;
     /** ok items: the hosted "Confirm with Credda" page for this request. */
     confirmUrl?:        string;
@@ -3817,7 +3817,7 @@ export interface ConfirmationListPayload {
 }
 
 /**
- * One roster row for `createActivationCampaign` — exactly a `CreateConfirmationInput`
+ * One roster row for `createActivationCampaign`: exactly a `CreateConfirmationInput`
  * plus an optional `rowKey` (your own stable id for the roster line, e.g. a shift
  * id, which makes the campaign idempotent per row).
  */
@@ -3834,7 +3834,7 @@ export interface CreateActivationCampaignInput {
 }
 
 /**
- * Result of `createActivationCampaign` — partial success. Each `results` entry is
+ * Result of `createActivationCampaign`: partial success. Each `results` entry is
  * one row's outcome: an ok row carries its one-time token + hosted confirmUrl; a
  * failed one carries the reason + code. Nothing is written to the ledger by any
  * row. `duplicates` lists rows dropped as in-batch repeats of an earlier rowKey.
@@ -3863,7 +3863,7 @@ export interface ActivationCampaignResult {
   }>;
 }
 
-/** The funnel a campaign reports — factual counts, never a score or judgment. */
+/** The funnel a campaign reports: factual counts, never a score or judgment. */
 export interface ActivationFunnel {
   submitted:        number;
   pending:          number;
@@ -3993,9 +3993,9 @@ export interface ReferenceRequest {
 /** Result of `createReferenceRequest`. The token is returned ONCE. */
 export interface ReferenceCreateResult {
   reference:      ReferenceRequest;
-  /** Raw one-time token — deliver it to the counterparty over your own channel. */
+  /** Raw one-time token: deliver it to the counterparty over your own channel. */
   referenceToken: string;
-  /** Credda's hosted reference page — the zero-frontend path. */
+  /** Credda's hosted reference page: the zero-frontend path. */
   referenceUrl:   string;
   /** The API preview, for platforms building their own reference UI. */
   previewUrl:     string;
@@ -4143,7 +4143,7 @@ export interface OpenBadgeAchievement {
   creator:         { id: string; type: string[]; name: string };
 }
 
-/** GET /api/v1/open-badges/achievements — the closed, signable set. */
+/** GET /api/v1/open-badges/achievements: the closed, signable set. */
 export interface OpenBadgeAchievementsPayload {
   specification:  Record<string, unknown>;
   note:           string;
@@ -4159,7 +4159,7 @@ export type QualificationCategory = 'education' | 'skill' | 'certification' | 'e
 export interface QualificationBreakdown {
   claimed:  number;
   verified: number;
-  /** verified ÷ claimed. Null — never 0 — when nothing is claimed here. */
+  /** verified ÷ claimed. Null (never 0) when nothing is claimed here. */
   verificationDepth: number | null;
 }
 
@@ -4171,7 +4171,7 @@ export interface VerifiedProfilePayload {
   totals:         { claimed: number; verified: number; selfAttested: number };
   /**
    * Share of the WHOLE claimed record that is independently verified. Equal
-   * weight per claim — no prestige, no ranking. Null when nothing is claimed.
+   * weight per claim: no prestige, no ranking. Null when nothing is claimed.
    */
   verificationDepth: number | null;
   /**
@@ -4189,7 +4189,7 @@ export interface VerifiedProfilePayload {
   /**
    * Counterparty-density summary: how many DISTINCT third parties have confirmed
    * a claim (and how many are employers). A plain distinct-count over verified
-   * claims — bias-invariant to issuer identity, never a scoring input.
+   * claims: bias-invariant to issuer identity, never a scoring input.
    */
   verifiedIssuers: {
     distinctVerifiedIssuers:   number;
@@ -4216,8 +4216,8 @@ export interface RecordQualificationInput {
   /**
    * Stable, caller-chosen identity for THIS claim (1–200 chars). Claims sharing
    * `(category, claimRef)` resolve to ONE claim, so syncing the same claim twice
-   * — self-attested when the user enters it, verified when a counterparty
-   * confirms it — counts once (verified wins). Omit and one call is one claim,
+   * (self-attested when the user enters it, verified when a counterparty
+   * confirms it) counts once (verified wins). Omit and one call is one claim,
    * exactly as before.
    */
   claimRef?:   string;
@@ -4225,7 +4225,7 @@ export interface RecordQualificationInput {
    * Record a RETRACTION MARKER for `(category, claimRef)` instead of a claim:
    * the claim is then withdrawn from the measure and the itemized record.
    * REQUIRES `claimRef` (400 without it), and any `verifiedBy` sent alongside is
-   * IGNORED — a retraction is never verified. The ledger stays append-only:
+   * IGNORED: a retraction is never verified. The ledger stays append-only:
    * nothing is deleted, the marker is one more event. A claim a witness already
    * confirmed is permanent record and a later retraction does not un-verify it.
    *
@@ -4257,7 +4257,7 @@ export interface RecordQualificationInput {
   /**
    * WHAT KIND OF SOURCE asserted this claim, so verification gates on how costly
    * the source is to fake rather than on whether an asserting string is present.
-   * Optional and additive — omitting it records the claim exactly as before.
+   * Optional and additive: omitting it records the claim exactly as before.
    *
    * `SELF_REPORTED`, `SUBJECT_CONTROLLED_PROOF` and `PUBLIC_REGISTRY` can never
    * reach `isVerified`; `HIGH_COST_REGISTRY` may verify the exact fact a
@@ -4395,12 +4395,12 @@ export interface ProfessionalRecordTenure {
 export interface ProfessionalRecord {
   professionalRecordVersion: string;
   note:        string;
-  /** `score`/`band` are null when nothing has been scored yet — never a placeholder. */
+  /** `score`/`band` are null when nothing has been scored yet, never a placeholder. */
   reliability: { score: number | null; band: string | null; confidence: number };
   verifiedExperience: {
     verifiedOutcomes:  number;
     totalOutcomes:     number;
-    /** verified ÷ total. Null — the honest answer, not 0 — with no record yet. */
+    /** verified ÷ total. Null (the honest answer, not 0) with no record yet. */
     verificationDepth: number | null;
     verifiedPlatforms: number;
   };
@@ -4437,7 +4437,7 @@ export interface CareerExportDocument {
 
 /**
  * The industry outcome-template catalog returned by `getOutcomeTemplates`.
- * Public, versioned, machine-readable guidance — same family as the plan and
+ * Public, versioned, machine-readable guidance: same family as the plan and
  * webhook-event catalogs. Typed openly because it is a documentation surface,
  * not a Credda-shaped record; nothing in it can move a score.
  */
@@ -4451,7 +4451,7 @@ export interface OutcomeTemplatesCatalog {
 }
 
 /**
- * GET /api/v1/verify/:token?scope=full&professional=1 — the public trust payload
+ * GET /api/v1/verify/:token?scope=full&professional=1: the public trust payload
  * with the professional-record block attached (`null` if it can't be derived).
  */
 export interface PublicProfessionalRecordPayload extends TrustPayload {
@@ -4474,7 +4474,7 @@ export interface ProfessionalRecordCredentialResult {
   expiresAt:      string;
   /**
    * The "Add to LinkedIn" certification deep link. LinkedIn stores only the
-   * name, organization, dates, credential id and `certUrl` — it does not import
+   * name, organization, dates, credential id and `certUrl`: it does not import
    * credential claims, and `note` says so.
    */
   linkedin: { addToProfileUrl: string; certUrl: string; certId: string; note: string };
@@ -4485,7 +4485,7 @@ export interface ProfessionalRecordCredentialResult {
 
 // ── Worker Reliability Report ─────────────────────────────────────────────────
 
-/** One recent outcome in the report — flagged verified vs self-reported. */
+/** One recent outcome in the report: flagged verified vs self-reported. */
 export interface ReliabilityReportOutcome {
   eventType:  string;
   stake:      string;
@@ -4507,10 +4507,10 @@ export interface ReliabilityReportFactor {
 
 /**
  * The consolidated decision-support dossier from `getReliabilityReport` /
- * `getPublicReliabilityReport`. An AGGREGATION of already-computed values — it
+ * `getPublicReliabilityReport`. An AGGREGATION of already-computed values: it
  * carries no new score. `recency` is null when the record has no dated activity.
  *
- * It is EVIDENCE a reader weighs against their own criteria — NOT a hire, place,
+ * It is EVIDENCE a reader weighs against their own criteria, NOT a hire, place,
  * rank, or approve verdict, a background check, or a consumer report. The
  * disclosures travel on every payload.
  */
@@ -4518,7 +4518,7 @@ export interface ReliabilityReport {
   reliabilityReportVersion: string;
   note: string;
   reliability: {
-    /** Null when nothing has been scored yet — never a placeholder number. */
+    /** Null when nothing has been scored yet, never a placeholder number. */
     score:              number | null;
     /** Band for `score`; null when there is no score to band. */
     band:               string | null;
@@ -4567,7 +4567,7 @@ export interface ReliabilityReportPayload extends ReliabilityReport {
   userId: string;
 }
 
-/** `GET /api/v1/verify/:token/reliability-report` — `reliabilityReport` is null on a race. */
+/** `GET /api/v1/verify/:token/reliability-report`: `reliabilityReport` is null on a race. */
 export interface PublicReliabilityReportPayload {
   token:             string;
   issuer:            string;

@@ -1,5 +1,5 @@
 /**
- * verifyTrustExport tests — sign a real W3C VC (Ed25519), wrap it in an export
+ * verifyTrustExport tests: sign a real W3C VC (Ed25519), wrap it in an export
  * bundle, and verify end-to-end with preloaded JWKS (no network). Covers the
  * tamper + format failure paths.
  */
