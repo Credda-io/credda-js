@@ -260,8 +260,10 @@ export class CreddaClient {
    * The developer plan catalog — the tiers (Starter / Growth / Enterprise), their
    * default key scopes, per-minute rate limits, and feature matrix. This is the
    * same data the API enforces and the pricing page renders, so it never drifts.
-   * Public (no key). Each tier carries its official monthly price
-   * (`priceUsdMonthly`); self-serve checkout is not live yet.
+   * Public (no key). Each tier carries its published monthly list price
+   * (`priceUsdMonthly`) and a `selfServe` flag saying how the tier is sold.
+   * The catalog does not report whether checkout is currently open for an
+   * account; credda.io/pricing serves that from live billing configuration.
    */
   getPlans(): Promise<PlanCatalog> {
     return this.get<PlanCatalog>('/plans');
@@ -1608,8 +1610,14 @@ export class CreddaClient {
    * Writes nothing score-side and never enqueues a recompute.
    *
    * Pass `claimRef` to give the claim a stable identity so syncing it twice
-   * (self-attested at creation, verified at confirmation) counts ONCE, and
-   * `{ claimRef, retract: true }` to withdraw a claim the subject deleted.
+   * (self-attested at creation, verified at confirmation) counts ONCE,
+   * `{ claimRef, retract: true }` to withdraw a claim the subject deleted, and
+   * `{ claimRef, supersedes: true }` to RETIRE an earlier confirmed instance —
+   * an expired licence, a downgraded credential — so it stops resolving
+   * verified without anything being deleted and without losing when it was last
+   * confirmed. Re-syncing the same `claimRef` on its own does NOT replace the
+   * earlier instance: the ledger appends and verified wins, so a re-sync that is
+   * meant to retire something must carry `supersedes`.
    */
   recordQualification(
     userId: string,
@@ -2025,7 +2033,11 @@ export interface Plan {
   rateLimitPerMin:  number;
   /** Cap on active continuous score monitors for this tier. */
   monitorLimit:     number;
-  /** Official monthly price in USD (display-only until self-serve checkout is live). */
+  /**
+   * Published monthly list price in USD. Derive any price display from this
+   * field rather than restating a figure. It says nothing about whether the
+   * plan can be bought right now, which is billing configuration, not catalog.
+   */
   priceUsdMonthly:  number;
   support:          string;
   features:         string[]; // feature keys included in this tier
@@ -2155,10 +2167,30 @@ export interface EnumCatalog {
   enums: EnumDoc[];
 }
 
+/**
+ * The three directions a reason code can carry.
+ *
+ * `informational` is neither adverse nor supporting: it states a fact about the
+ * DATA (`NO_RECORDED_OUTCOMES`, `SCORE_NOT_YET_COMPUTED`) rather than about the
+ * record's performance. **Never draw a Regulation B statement of specific
+ * reasons from an informational code**. It is the reason there is no
+ * attribution, not attribution.
+ */
+export type ReasonCodeDirection = 'adverse' | 'supporting' | 'informational';
+
 /** One documented reason code from GET /api/v1/reason-codes. */
 export interface ReasonCodeDoc {
   code:        string;
-  factor:      string;   // completion | timeliness | disputes | verification | evidence | recency | integrity
+  factor:      string;   // completion | timeliness | disputes | verification | evidence | recency | integrity | data | grounding
+  /**
+   * The catalog ALSO serves `'informational'` today, for the two data-state
+   * codes `NO_RECORDED_OUTCOMES` and `SCORE_NOT_YET_COMPUTED` (see
+   * {@link ReasonCodeDirection}). Widening this declared union is a breaking
+   * change to published `@credda/js` consumers and is held for a version
+   * decision, so compare with `=== 'adverse'` / `=== 'supporting'` rather than
+   * switching exhaustively, and treat anything else as informational, never as
+   * an adverse reason.
+   */
   direction:   'adverse' | 'supporting';
   title:       string;
   description: string;
@@ -2172,6 +2204,12 @@ export interface ReasonCodeCatalog {
   method:             string;
   keyFactorLimit:     number;
   keyFactorGuidance:  string;
+  /**
+   * The stated rule for an UNMEASURED record: it yields NO adverse reason, in
+   * either of the two ways a record can be unmeasured (no outcomes at all, or
+   * outcomes whose score has not been computed yet).
+   */
+  insufficientDataPolicy?: string;
   disclosures:        string[];
   codes:              ReasonCodeDoc[];
 }
@@ -2194,6 +2232,27 @@ export interface ReasonCodeInstance {
   evidence:     Record<string, number>;
 }
 
+/**
+ * One informational reason-code instance: a fact about the DATA, not about the
+ * record's performance. Its members are `NO_RECORDED_OUTCOMES` and
+ * `SCORE_NOT_YET_COMPUTED`. It is deliberately a SEPARATE type from
+ * {@link ReasonCodeInstance} so that `direction` can carry its true value here
+ * without changing the declared type of the adverse/supporting rows.
+ */
+export interface InformationalReasonCode {
+  code:         string;
+  factor:       string;
+  direction:    'informational';
+  title:        string;
+  description:  string;
+  contribution: number;
+  rank:         number;
+  evidence:     Record<string, number>;
+}
+
+/** Why nothing is attributable. `'ok'` means the codes above are real attribution. */
+export type ReasonCodeDataState = 'ok' | 'no_recorded_outcomes' | 'score_not_yet_computed';
+
 /** The `reasonCodes` object additively attached to GET /score/explain. */
 export interface ReasonCodeResult {
   formulaVersion:       string;
@@ -2204,6 +2263,23 @@ export interface ReasonCodeResult {
   keyFactorLimit:       number;
   adverseActionReasons: ReasonCodeInstance[];
   supportingFactors:    ReasonCodeInstance[];
+  /**
+   * Facts about the DATA rather than about the record's performance. Never draw
+   * a statement of specific reasons from this list: it is the reason there is no
+   * attribution.
+   */
+  informationalFactors?: InformationalReasonCode[];
+  /**
+   * `true` when NOTHING is attributable: the record holds no outcomes at all, or
+   * it holds outcomes whose score has not been computed yet. When `true`, BOTH
+   * `adverseActionReasons` and `supportingFactors` are EMPTY by construction:
+   * an absent measurement must never yield an adverse reason. **Branch on this
+   * before reading any ranked list or `finalScore`.** `dataState` says which of
+   * the two it is.
+   */
+  insufficientData?:    boolean;
+  /** Machine-readable data state: `'ok'` or the specific reason nothing is attributable. */
+  dataState?:           ReasonCodeDataState;
   disclosures:          string[];
   advisory:             string;
 }
@@ -2215,7 +2291,7 @@ export interface TrustPayload {
    * Current canonical score, or **null when no score has been computed yet**
    * — never a placeholder. A `50` fallback used to stand in here; the engine
    * never produces it for an unscored subject (v5.3 anchors a new record near
-   * 20, "Unproven") and it bands as "Fair".
+   * 20, "Provisional") and it bands as "Proven".
    */
   finalScore:        number | null;
   /** Band for `finalScore`; null when there is no score to band. */
@@ -2440,7 +2516,7 @@ export interface ScorePayload {
    * Current canonical score, or **null when no score has been computed yet**
    * — never a placeholder. A `50` fallback used to stand in here; the engine
    * never produces it for an unscored subject (v5.3 anchors a new record near
-   * 20, "Unproven") and it bands as "Fair".
+   * 20, "Provisional") and it bands as "Proven".
    */
   finalScore:     number | null;
   /** Band for `finalScore`; null when there is no score to band. */
@@ -2504,11 +2580,26 @@ export interface TrustSummaryPayload {
     finalScore: number;
     scoreBand: string;
     confidenceLevel: 'high' | 'moderate' | 'low' | 'none';
+    /**
+     * **CHECK `insufficientData` FIRST.** `null` on the wire when the record has
+     * no outcomes at all: a zero denominator has no rate, and reporting `0`
+     * would say "completed none of them" about a record that was never
+     * measured. Still declared `number` for backwards compatibility with
+     * published `@credda/js` consumers.
+     */
     completionRate: number;
+    /** `null` on the wire when the record has no outcomes; see `completionRate`. */
     onTimeRate: number;
     verifiedEvents: number;
     totalEvents: number;
     distinctPlatforms: number;
+    /**
+     * `true` when there are no recorded outcomes, so nothing above is
+     * measurable. This is the field to branch on. A measured `0` (a real record
+     * that genuinely completed nothing) reports `insufficientData: false` with a
+     * real `0`, and must still be shown.
+     */
+    insufficientData?: boolean;
   };
   /** Standing note that this is evidence, not a recommendation. */
   advisory?: string;
@@ -2625,10 +2716,53 @@ export interface BookSummaryPayload {
 }
 
 export interface ScoreExplainFactor {
+  /**
+   * Stable machine key for this factor row: `completionRate`, `onTimeRate`,
+   * `disputeRate`, `verificationDepth`, `verifiedProfessionalGrounding`.
+   * Match on THIS, never on `name`: the human label has been renamed before
+   * (Platform Diversity became Verification Depth) and will be again.
+   */
+  key?:         'completionRate' | 'onTimeRate' | 'disputeRate' | 'verificationDepth' | 'verifiedProfessionalGrounding' | (string & {});
   name:         string;
+  /**
+   * The factor value in [0,1].
+   *
+   * **CHECK `available` FIRST.** When `available` is `false` the API sends
+   * `null` here (and `null` for `contribution`), because the record holds no
+   * outcomes and every rate has a zero denominator. This field is still
+   * declared `number` for backwards compatibility with published `@credda/js`
+   * consumers, so an unmeasured factor arrives as `null` at runtime despite the
+   * declared type. Never read it without branching on `available`: an
+   * unmeasured factor is UNKNOWN, and rendering it as `0` says "completed none
+   * of them" about a record that was never measured.
+   */
   value:        number;
+  /**
+   * ⚠️ **THE RUNTIME VALUE IS A NUMBER, NOT A STRING.** The API split this field
+   * on 2026-08-09: `weight` is now the fraction the engine applies, in [0,1]
+   * (e.g. `0.37`), and the `"37%"` label moved to `weightPercent` below. The
+   * declared type here is still `string` for backwards compatibility with
+   * published `@credda/js` consumers, so it is a type hint that does not match
+   * what arrives. `f.weight.endsWith('%')` throws; rendering `{f.weight}` shows
+   * `0.37` where `37%` is meant. **Read `weightPercent` for the label and treat
+   * this as a number.** (The Go SDK declared the same field `string` and could
+   * not decode the response at all; that one was corrected. Correcting this one
+   * is a breaking change to a published package and is a separate decision.)
+   */
   weight:       string;
+  /**
+   * The same weight rendered for display, e.g. `"37%"`. This is the field that
+   * actually holds a string. Prefer it over formatting `weight` yourself.
+   */
+  weightPercent?: string;
+  /** See `value`: `null` on the wire whenever `available` is `false`. */
   contribution: number;
+  /**
+   * `false` when the record has no data from which to measure this factor.
+   * This is the field to branch on. `false` does NOT mean the factor scored
+   * badly; it means there was nothing to measure.
+   */
+  available?:   boolean;
   description:  string;
 }
 
@@ -2636,6 +2770,13 @@ export interface ScoreExplainFactor {
 export interface ScoreExplainPayload {
   summary:  string;
   factors:  ScoreExplainFactor[];
+  /**
+   * The explicit insufficient-data state for the whole explanation. Render THIS
+   * when `insufficientData` is true rather than inventing "0% completion" for a
+   * record that has never been measured. Present on every response, including
+   * the empty-record one (where `factors` is `[]`).
+   */
+  dataSufficiency?: DataSufficiency;
   /** Deterministic adverse-action reason codes for the record (ECOA / Reg B).
    *  A partner draws its statement of specific reasons from
    *  `reasonCodes.adverseActionReasons`. See getReasonCodes() for the catalog. */
@@ -2688,9 +2829,31 @@ export interface ScoreDeltaPayload {
 export interface ScoreComponent {
   key:         'reliability' | 'timeliness' | 'trustworthiness' | 'verification' | 'consistency' | 'momentum';
   label:       string;
-  score:       number;
+  /**
+   * 0–100, or NULL when the component is not measurable, which today means the
+   * record has no recorded outcomes. A zero denominator has no rate, and a `0`
+   * would read as "scored zero" rather than "never measured". See `available`.
+   */
+  score:       number | null;
+  /**
+   * Share of the weighted raw score this component drives, or null for the two
+   * multiplicative modifiers. It follows the FORMULA VERSION that produced the
+   * breakdown (v5.3: .40/.35/.15/.10; v5.4 blend: .37/.32/.15/.08), so never
+   * hardcode it: read it, or read `GET /api/v1/scoring/model`.
+   */
   weight:      number | null;
+  /** False when there is not enough data to measure this component at all. */
+  available:   boolean;
   description: string;
+}
+
+/** Explicit insufficient-data state. No history is UNKNOWN, never BAD. */
+export interface DataSufficiency {
+  insufficientData: boolean;
+  state:            'ok' | 'no_recorded_outcomes';
+  recordedOutcomes: number;
+  verifiedOutcomes: number;
+  note:             string;
 }
 
 /** Payload from GET /api/v1/users/:id/score/components. */
@@ -2700,6 +2863,8 @@ export interface ScoreComponentsPayload {
   finalScore?:     number;
   scoreBand?:      string;
   components:      ScoreComponent[];
+  /** Present on every response; `insufficientData` is true for an empty record. */
+  dataSufficiency?: DataSufficiency;
   computedAt?:     string;
   formulaVersion?: string;
 }
@@ -2825,6 +2990,36 @@ export interface ProjectionEventInput {
   transactionValue?: number | null;
 }
 
+/**
+ * What a batch of hypothetical claims did, and did not, state about timeliness.
+ *
+ * An unstated lateness is NOT a claim of punctuality. The model gives an outcome
+ * with no recorded deadline full timeliness credit, so any projection over
+ * unstated claims is a BEST case: supplying the real lateness can only lower it.
+ * `projectionIsUpperBound` is the field to branch on before presenting a
+ * projected number as a point estimate.
+ */
+export interface TimelinessDisclosure {
+  /** How many of the submitted claims stated a lateness. A stated `0` is a claim of punctuality. */
+  statedEvents:   number;
+  /** How many did not. These are modelled as carrying no recorded deadline. */
+  unstatedEvents: number;
+  basis:          'stated' | 'partially_stated' | 'unstated';
+  /**
+   * `true` when at least one claim left its lateness unstated, which makes every
+   * projection in this response a best case rather than a point estimate.
+   */
+  projectionIsUpperBound: boolean;
+  /** Plain-language statement of exactly what was and was not assumed. */
+  note:           string;
+  /**
+   * The other end of the range the request left open: the same projection with
+   * every unstated lateness modelled at the model's floor point. `null` when
+   * nothing was left unstated. Present on `projectScore` only.
+   */
+  projectedIfUnstatedWereLate?: { finalScore: number; scoreBand: string; delta: number } | null;
+}
+
 /** Payload from POST /api/v1/users/:id/score/project. */
 export interface ScoreProjectionPayload {
   userId:         string;
@@ -2833,6 +3028,8 @@ export interface ScoreProjectionPayload {
   projected:      { finalScore: number; scoreBand: string };
   bandChanged:    boolean;
   formulaVersion: string;
+  /** What the request stated about lateness, and whether the projection is an upper bound. */
+  timeliness?:    TimelinessDisclosure;
 }
 
 /** Payload from GET /api/v1/usage/quota. */
@@ -2882,6 +3079,13 @@ export interface DocumentAdvicePayload {
     ifAllVerified: { finalScore: number; scoreBand: string };
   };
   witnessGuide:   Record<string, { witness: string; polarity: string }>;
+  /**
+   * Both projections above credit an unstated lateness with full timeliness, so
+   * they are upper bounds whenever `timeliness.projectionIsUpperBound` is true.
+   * Branch on it rather than letting the number imply a punctuality nobody
+   * claimed.
+   */
+  timeliness?:    TimelinessDisclosure;
   summary:        string;
   formulaVersion: string;
   note:           string;
@@ -2915,7 +3119,27 @@ export interface ReportEventInput {
   isVerified?:       boolean;
   transactionValue?: number;
   metadata?:         Record<string, unknown>;
+  /**
+   * WHO confirmed this outcome: OPTIONAL, ADDITIVE and OPAQUE. Omit it and the
+   * event records exactly as it does today.
+   *
+   * It must be a keyed digest YOU compute:
+   * `HMAC-SHA256(yourSecret, "credda:confirmer:v1:" + normalisedIdentity)`,
+   * rendered as 64 lowercase hex characters. That lets Credda tell that two
+   * confirmations came from the SAME party while never learning who that party
+   * is. **Never send a raw email address, IP address, name or user id**, the
+   * format refuses them and the call is rejected.
+   */
+  confirmerId?:      string;
+  /**
+   * The confirming party's RELATIONSHIP to the subject, never their identity.
+   * Reads as `INDIVIDUAL` when omitted; ignored without a `confirmerId`.
+   */
+  confirmerType?:    ConfirmerType;
 }
+
+/** How a confirming party relates to the subject. Never their identity. */
+export type ConfirmerType = 'INDIVIDUAL' | 'EMPLOYER' | 'PLATFORM';
 
 /** One event in a batch (reportEvents / POST /events/batch). */
 export interface BatchEventInput extends ReportEventInput {
@@ -3500,6 +3724,17 @@ export interface CreateConfirmationInput {
    * its own independent witness (400 `CONFIRMATION_SELF`).
    */
   counterpartyRef:   string;
+  /**
+   * OPTIONAL keyed digest of the confirming party, carried onto the resulting
+   * event when they confirm, so the engine can tell repeat confirmations from
+   * one party apart from many independent ones. DISTINCT from
+   * `counterpartyRef`, which may legitimately be an address and is therefore
+   * never a scoring input. See `ReportEventInput.confirmerId` for the recipe;
+   * never send a raw identity.
+   */
+  confirmerId?:      string;
+  /** The confirming party's RELATIONSHIP to the subject, never their identity. */
+  confirmerType?:    ConfirmerType;
   /** Human name shown to the counterparty on the preview / hosted page. */
   counterpartyName?: string;
   /** Human description of what they are being asked to confirm. */
@@ -3825,13 +4060,46 @@ export interface ThresholdPolicy {
   direction:       PolicyDirection | null;
   threshold:       number | null;
   component:       PolicyComponentKey | null;
+  /**
+   * The watched band, when `metric` is `'band'`. Any string is accepted, so this
+   * is NOT narrowed to the current ladder: check `conditionStatus` beside it.
+   */
   band:            string | null;
   isActive:        boolean;
+  /**
+   * Read-only, derived by the API on every read: can this condition still be met
+   * on today's band ladder? `'unreachable'` means it never can, for any subject
+   * at any score, so no `policy.threshold_crossed` will ever be delivered for it.
+   *
+   * Optional because a policy read from an OLDER API deployment will not carry
+   * it, and `undefined` must stay distinguishable from `'active'`: absent means
+   * "not reported", not "fine".
+   */
+  conditionStatus?: PolicyConditionStatus;
+  /** Why the condition can never be met. Null when `conditionStatus` is active. */
+  conditionStatusReason?: PolicyConditionUnreachable | null;
   lastTriggeredAt: string | null;
   createdAt:       string;
   updatedAt:       string;
   /** Your own external id for a subject-scoped policy; null when appliesToAll. */
   userId:          string | null;
+}
+
+/**
+ * Whether a stored policy condition is still expressible on the current band
+ * ladder. `'active'` means its vocabulary is current, NOT that it will fire.
+ */
+export type PolicyConditionStatus = 'active' | 'unreachable';
+
+/** Why a policy condition can never be met, with the ladder as it stands. */
+export interface PolicyConditionUnreachable {
+  /** `BAND_NOT_IN_LADDER`: the watched band is not a label the ladder defines. */
+  code:         'BAND_NOT_IN_LADDER';
+  /** The label exactly as you stored it. Never corrected or guessed at. */
+  band:         string;
+  /** Every label the ladder defines today, in ladder order (highest first). */
+  currentBands: string[];
+  message:      string;
 }
 
 /** Body for `createPolicy`. Set exactly one of `userId` / `appliesToAll`. */
@@ -3964,15 +4232,98 @@ export interface RecordQualificationInput {
    * Not accepted by `importQualifications`, which is creation-only.
    */
   retract?:    boolean;
+  /**
+   * Record this event as SUPERSEDING the earlier instances of
+   * `(category, claimRef)`: resolution then reads the group from this event
+   * onward, so a credential that has LAPSED or been downgraded stops resolving
+   * verified. REQUIRES `claimRef` (400 without it).
+   *
+   * This is how you RETIRE a confirmed claim, and it is deliberately not a
+   * delete and not a retraction. The ledger stays append-only: the earlier
+   * verified event is untouched, and the record still reports
+   * `previouslyVerifiedAt`, so "confirmed until this date" stays sayable and a
+   * confirmation that really happened is never erased. `retract` means WITHDRAW
+   * THE CLAIM and deliberately cannot beat a verified event; "this lapsed" is a
+   * different statement and gets its own marker.
+   *
+   * It grants nothing on its own: the `isVerified` of the superseding event
+   * still comes from the witness rule, so superseding WITH a witness
+   * re-verifies (a renewed licence) and superseding without one lands
+   * self-attested (an expired one).
+   *
+   * Not accepted by `importQualifications`, which is creation-only.
+   */
+  supersedes?: boolean;
+  /**
+   * WHAT KIND OF SOURCE asserted this claim, so verification gates on how costly
+   * the source is to fake rather than on whether an asserting string is present.
+   * Optional and additive — omitting it records the claim exactly as before.
+   *
+   * `SELF_REPORTED`, `SUBJECT_CONTROLLED_PROOF` and `PUBLIC_REGISTRY` can never
+   * reach `isVerified`; `HIGH_COST_REGISTRY` may verify the exact fact a
+   * register holds and nothing broader; `AUTHORITATIVE_SYSTEM_OF_RECORD` may
+   * verify unless the subject administers the source; `HUMAN_CONFIRMATION` is
+   * unchanged. The gate is a one-way valve: declaring a stronger tier can never
+   * raise a claim above what the witness rule already supports. The full rule
+   * table is published at `GET /api/v1/scoring/model` (`provenance.tiers`).
+   */
+  provenanceTier?: ProvenanceTier;
+  /**
+   * A citable public http(s) link to the asserting source. REQUIRED for
+   * `PUBLIC_REGISTRY` and `HIGH_COST_REGISTRY`: a register attestation nobody
+   * can look up is unfalsifiable. Stored as text and NEVER fetched.
+   */
+  provenanceCitationUri?: string;
+  /**
+   * Whether the SUBJECT administers the asserting source. Three-valued: `false`
+   * asserts independence, `true` demotes, and OMITTING it also demotes, because
+   * absence of evidence is not evidence of independence. Only
+   * `AUTHORITATIVE_SYSTEM_OF_RECORD` carries a demotion, so a genuine
+   * system-of-record integration must send `false` explicitly.
+   */
+  subjectAdministersSource?: boolean;
 }
 
 /**
- * One item of `importQualifications`. The single-claim body MINUS `retract`:
- * bulk import is creation-only and refuses an item carrying `retract` with a 400
- * rather than silently recording a claim you meant to withdraw. `claimRef` IS
- * accepted, so an imported claim can be confirmed by a later sync.
+ * What kind of source asserted a qualification claim. A closed vocabulary
+ * describing the SOURCE, never the subject and never the issuer: nothing here
+ * ranks an institution, employer or jurisdiction.
  */
-export type QualificationImportItemInput = Omit<RecordQualificationInput, 'retract'>;
+export type ProvenanceTier =
+  | 'SELF_REPORTED'
+  | 'SUBJECT_CONTROLLED_PROOF'
+  | 'PUBLIC_REGISTRY'
+  | 'HIGH_COST_REGISTRY'
+  | 'AUTHORITATIVE_SYSTEM_OF_RECORD'
+  | 'HUMAN_CONFIRMATION';
+
+/** What was recorded about the asserting source, echoed on a write. */
+export interface RecordedProvenance {
+  /** The tier actually applied, AFTER the subject-administration demotion. */
+  tier: ProvenanceTier;
+  /** The tier that arrived. Equal to `tier` when nothing was demoted. */
+  declaredTier: ProvenanceTier;
+  citationUri: string | null;
+  subjectAdministersSource: boolean | null;
+  /** A display label this claim must travel with (e.g. `subject-controlled`), or null. */
+  label: string | null;
+  /** What a source of this kind does NOT prove. */
+  doesNotProve: string;
+  /** Whether the gate was live when this row was written. */
+  enforced: boolean;
+}
+
+/**
+ * One item of `importQualifications`. The single-claim body MINUS `retract` and
+ * `supersedes`: bulk import is creation-only and refuses an item carrying
+ * either with a 400 rather than silently recording a claim you meant to
+ * withdraw, or silently retiring one you did not. `claimRef` IS accepted, so an
+ * imported claim can be confirmed (or later superseded) by a single-claim sync.
+ */
+export type QualificationImportItemInput = Omit<
+  RecordQualificationInput,
+  'retract' | 'supersedes'
+>;
 
 /** POST /api/v1/users/:id/qualifications. */
 export interface RecordQualificationResult {
@@ -3985,8 +4336,16 @@ export interface RecordQualificationResult {
   claimRef:   string | null;
   /** True when this call recorded a RETRACTION MARKER rather than a claim. */
   retracted:  boolean;
+  /**
+   * True when this call recorded a SUPERSESSION MARKER, opening a new
+   * resolution window on the claim group. Optional on the type: an older API
+   * omits it.
+   */
+  superseded?: boolean;
   /** Why the claim was recorded as self-attested. Null when verified. */
   verificationNote: string | null;
+  /** What was recorded about the asserting source. Null when no tier was declared. */
+  provenance?:      RecordedProvenance | null;
   note:             string;
 }
 
@@ -4168,11 +4527,30 @@ export interface ReliabilityReport {
     reasonCodesVersion: string;
   };
   metrics: {
+    /**
+     * **CHECK `insufficientData` FIRST.** `null` on the wire whenever the rate
+     * was not measured: the record holds no outcomes, or it holds outcomes whose
+     * score has not been computed yet. Still declared `number` for backwards
+     * compatibility with published `@credda/js` consumers. A zero denominator is
+     * not a 0% rate, and a pending computation is not a 0% rate.
+     */
     completionRate: number;
+    /** `null` on the wire when not measured; see `completionRate`. */
     onTimeRate:     number;
+    /** `null` on the wire when not measured; see `completionRate`. */
     consistency:    number;
     recency:        number | null;
+    /** `null` on the wire when not measured; see `completionRate`. */
     disputeRate:    number;
+    /**
+     * `true` when no rate above is measurable. Branch on this before reading any
+     * of them. A genuinely measured `0` reports `insufficientData: false` and
+     * must still be shown: hiding real bad news is a worse failure than the
+     * substitution this field exists to prevent.
+     */
+    insufficientData?: boolean;
+    /** Why the rates are, or are not, measurable. Mirrors `reasonCodes.dataState`. */
+    dataState?:        ReasonCodeDataState;
   };
   verifiedExperience: ProfessionalRecord['verifiedExperience'] & { tenure: ProfessionalRecordTenure };
   topFactors:     ReliabilityReportFactor[];

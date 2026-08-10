@@ -132,7 +132,7 @@ describe('getPlans', () => {
     let called = '';
     const catalog = {
       pricing: 'official',
-      note: 'Prices are official; self-serve checkout is coming.',
+      note: 'Published monthly list prices. Checkout state is served at credda.io/pricing.',
       features: [{ key: 'scoreReads', group: 'Read & verify', label: 'Score reads' }],
       plans: [
         { id: 'STARTER', name: 'Starter', tagline: 'Read & verify', scopes: ['scores:read'], rateLimitPerMin: 240, monitorLimit: 5, priceUsdMonthly: 49, support: 'Community', features: ['scoreReads'] },

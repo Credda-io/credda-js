@@ -119,6 +119,66 @@ Every method returns a typed payload matching the API (`ScorePayload`,
 `CreddaError` carrying the HTTP `status` and request `path`. Write methods need a
 key with the matching scope (`write` or e.g. `events:write` / `webhooks:write`).
 
+## ⚠️ Unmeasured is not zero
+
+The single most important rule when reading anything score-shaped. Credda
+distinguishes **"we measured it and it was bad"** from **"there was nothing to
+measure"**, and the API says which on the wire: an unmeasured rate is `null`,
+never `0`. A record with no history has not completed 0% of its commitments; it
+has not been measured, and rendering `0` turns an absence into a failing record.
+
+Every affected value travels with a **discriminator**. Branch on it:
+
+```ts
+const comps = await credda.getScoreComponents('user-123', key);
+
+// The whole-payload state first: is there anything to measure at all?
+if (comps.dataSufficiency?.insufficientData) {
+  render(comps.dataSufficiency.note);   // safe to show verbatim
+}
+
+for (const c of comps.components) {
+  if (!c.available) {
+    render(`${c.label}: not measured`);  // NEVER "0", and never "0%"
+    continue;
+  }
+  render(`${c.label}: ${c.score}`);
+}
+```
+
+The discriminator for each surface:
+
+| Read | Branch on | Values it guards |
+|---|---|---|
+| `getScoreComponents` | `component.available`, `dataSufficiency.insufficientData` | `score` |
+| `getScoreExplain` | `factor.available`, `dataSufficiency.insufficientData` | `value`, `contribution` |
+| `getScoreExplain().reasonCodes` | `insufficientData`, `dataState` | `adverseActionReasons`, `supportingFactors`, `finalScore` |
+| `getTrustSummary` | `evidence.insufficientData` | `completionRate`, `onTimeRate` |
+| `getReliabilityReport` | `metrics.insufficientData`, `metrics.dataState` | `completionRate`, `onTimeRate`, `consistency`, `disputeRate` |
+| `projectScore` / `analyzeDocument` | `timeliness.projectionIsUpperBound` | `projected` (it is a best case, not a point estimate) |
+
+Three things follow, each with a test in `src/lib/unmeasuredIsNotZero.test.ts`:
+
+- **A measured zero is still real and must still be shown.** `available: true`
+  with `score: 0` is a record that genuinely completed nothing. Hiding real bad
+  news is a worse failure than the substitution this rule exists to prevent.
+- **An absent measurement is never an adverse reason.** When
+  `reasonCodes.insufficientData` is true, `adverseActionReasons` and
+  `supportingFactors` are **empty by construction**, and the one code present is
+  `informational`. Never draw a Regulation B statement of specific reasons from
+  it. `dataState` says whether the record has no outcomes at all
+  (`no_recorded_outcomes`) or outcomes whose score has not been computed yet
+  (`score_not_yet_computed`).
+- **An older API is safe.** These fields are additive and optional; against a
+  server that predates them they are simply `undefined`. Compare with
+  `!== false` so an absent flag reads as *unknown*, not as "unavailable".
+
+`score`, `value`, `completionRate` and friends are still declared non-nullable
+where they were: widening them is a breaking change for published `@credda/js`
+consumers and is held for a version decision. Each one's doc comment names the
+field that guards it, and the discriminators are what make correct code possible
+today.
+
 ## Automatic retries (opt-in)
 
 ```ts
@@ -239,7 +299,7 @@ await credda.createPolicy(
   key,
 );
 await credda.createPolicy(
-  { name: 'Anyone entering High Risk', appliesToAll: true, metric: 'band', direction: 'enter', band: 'High Risk' },
+  { name: 'Anyone entering At Risk', appliesToAll: true, metric: 'band', direction: 'enter', band: 'At Risk' },
   key,
 );
 await credda.listPolicies(key);
@@ -277,6 +337,13 @@ const profile = await credda.getVerifiedProfile('worker_7', key);
 // confirms it — resolves to ONE entry (verified wins) instead of two. Pass the
 // same `claimRef` to `createReferenceRequest`, and `{ claimRef, retract: true }`
 // withdraws a claim the subject deleted (append-only: nothing is erased).
+//
+// `{ claimRef, supersedes: true }` RETIRES an earlier confirmed instance, for a
+// licence that lapsed or a credential that was downgraded, so it stops
+// resolving verified. It is not a delete and not a retraction: the earlier
+// event stays on the ledger and the record still reports `previouslyVerifiedAt`,
+// so "confirmed until this date" stays sayable. Re-syncing the same `claimRef`
+// on its own does NOT retire anything, because verified wins.
 
 // Public, no key — the token is the subject's own consent to present it.
 const shown = await new CreddaClient().getPublicProfessionalRecord('crd_share_…');
