@@ -158,7 +158,7 @@ describe('getWebhookEvents', () => {
   it('GETs /webhooks/events and returns the typed catalog', async () => {
     let called = '';
     const catalog = {
-      envelope: { type: 'string — one of the event types below' },
+      envelope: { type: 'string, one of the event types below' },
       signing: 'HMAC-SHA256 over `${timestamp}.${rawBody}`',
       advisory: 'Webhooks are advisory. No event can change anyone’s score.',
       events: [
@@ -1724,7 +1724,7 @@ describe('Verified Profile (qualifications)', () => {
     recordingStub(201, {
       userId: 'worker_7', eventId: 'ev_2', category: 'skill',
       eventType: 'SKILL_VERIFIED', isVerified: false,
-      verificationNote: 'no third-party witness — recorded as a self-attested claim',
+      verificationNote: 'no third-party witness, recorded as a self-attested claim',
       note: 'Recorded on the ledger. A qualification claim never affects the Credda Reliability Score.',
     });
     const r = await new CreddaClient({ apiBase: BASE }).recordQualification(
@@ -1738,8 +1738,8 @@ describe('Verified Profile (qualifications)', () => {
     const calls = recordingStub(200, {
       userId: 'worker_7', created: 2, failed: 0, total: 2, maxClaims: 100,
       items: [
-        { index: 0, ok: true, category: 'education', eventId: 'ev_1', eventType: 'EDUCATION_VERIFIED', isVerified: false, verificationNote: 'no third-party witness — recorded as a self-attested claim' },
-        { index: 1, ok: true, category: 'employment', eventId: 'ev_2', eventType: 'EMPLOYMENT_VERIFIED', isVerified: false, verificationNote: 'no third-party witness — recorded as a self-attested claim' },
+        { index: 0, ok: true, category: 'education', eventId: 'ev_1', eventType: 'EDUCATION_VERIFIED', isVerified: false, verificationNote: 'no third-party witness, recorded as a self-attested claim' },
+        { index: 1, ok: true, category: 'employment', eventId: 'ev_2', eventType: 'EMPLOYMENT_VERIFIED', isVerified: false, verificationNote: 'no third-party witness, recorded as a self-attested claim' },
       ],
       verifiedProfile: { userId: 'worker_7', profileVersion: '1.0', categories: {}, totals: { claimed: 2, verified: 0, selfAttested: 2 }, verificationDepth: 0, note: 'verification of claims, not an assessment of the person', disclosures: ['…'] },
       note: 'Every imported claim is recorded self-attested (isVerified:false) unless a genuine third-party witness was named per claim.',
