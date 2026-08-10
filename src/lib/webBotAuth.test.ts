@@ -63,7 +63,7 @@ describe('structured-field parsing', () => {
   });
 });
 
-describe('signature base reconstruction — RFC 9421 B.2.6 vector', () => {
+describe('signature base reconstruction: RFC 9421 B.2.6 vector', () => {
   it('rebuilds the RFC signature base byte for byte', () => {
     const [sig] = parseSignatureInput(B26_INPUT);
     const base = rebuildSignatureBase(sig, {

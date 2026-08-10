@@ -32,7 +32,7 @@ export type {
   ScoreUpdatedEvent, ScoreBandChangedEvent, DisputeResolvedEvent, MonitorTriggeredEvent, UsageQuotaWarningEvent,
 } from './lib/webhook.js';
 
-// Web Bot Auth (RFC 9421) verification — the OPTIONAL second signature on a
+// Web Bot Auth (RFC 9421) verification: the OPTIONAL second signature on a
 // delivery, for receivers that terminate their own edge instead of relying on a
 // WAF. Never a substitute for verifyWebhookSignature.
 export { verifyWebBotAuthSignature } from './lib/webBotAuth.js';

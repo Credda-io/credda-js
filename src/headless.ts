@@ -1,9 +1,9 @@
 /**
- * Headless entry point — everything in `@credda/js` except the React provider
+ * Headless entry point: everything in `@credda/js` except the React provider
  * and hooks. Zero `react`/`react-dom` runtime dependency, so this is safe to
  * import from plain Node (CLIs, servers, the MCP server in `packages/mcp`)
  * without pulling React into the module graph. Same underlying `lib/*`
- * modules as the default `.` export — just without `components/`/`hooks/`.
+ * modules as the default `.` export, just without `components/`/`hooks/`.
  */
 
 // Offline credential verification (compact + W3C VC-JWT) + revocation
@@ -29,7 +29,7 @@ export type {
   ScoreUpdatedEvent, ScoreBandChangedEvent, DisputeResolvedEvent, MonitorTriggeredEvent, UsageQuotaWarningEvent,
 } from './lib/webhook.js';
 
-// Web Bot Auth (RFC 9421) verification — the OPTIONAL second signature on a
+// Web Bot Auth (RFC 9421) verification: the OPTIONAL second signature on a
 // delivery, for receivers that terminate their own edge instead of relying on a
 // WAF. Never a substitute for verifyWebhookSignature.
 export { verifyWebBotAuthSignature } from './lib/webBotAuth.js';

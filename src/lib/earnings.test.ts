@@ -1,5 +1,5 @@
 /**
- * Verified Earnings client methods — over a stubbed fetch (no network).
+ * Verified Earnings client methods, over a stubbed fetch (no network).
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest';

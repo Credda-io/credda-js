@@ -3,12 +3,12 @@
  *
  * Credda signs each delivery with `X-Credda-Signature: sha256=<hex>` where the
  * HMAC-SHA256 is computed over `${X-Credda-Timestamp}.${rawBody}` using the
- * webhook's signing secret. Verify on the RAW request body — before JSON.parse —
+ * webhook's signing secret. Verify on the RAW request body (before JSON.parse)
  * or the bytes won't match. Uses WebCrypto (Node 18+ and browsers).
  */
 
 /**
- * The event types Credda emits. Mirrors WEBHOOK_EVENT_TYPES in the API — keep
+ * The event types Credda emits. Mirrors WEBHOOK_EVENT_TYPES in the API. Keep
  * the two in step; a new event type is always additive.
  */
 export type WebhookEventType =
@@ -34,7 +34,7 @@ export interface WebhookFactorDelta {
   improved: boolean;
 }
 
-/** Why the score moved — a factor-level diff vs. the prior snapshot. */
+/** Why the score moved: a factor-level diff vs. the prior snapshot. */
 export interface ScoreChangeReason {
   scoreDelta: number;
   direction: 'up' | 'down' | 'unchanged';
@@ -66,12 +66,12 @@ export interface DisputeResolvedData {
   user: { externalId: string | null };
   outcome: 'FOR_USER' | 'AGAINST_USER';
   status: 'RESOLVED_FOR_USER' | 'RESOLVED_AGAINST_USER';
-  /** True when the dispute lapsed unadjudicated (resolved in the user's favour). */
+  /** True when the dispute lapsed unadjudicated (resolved in the user's favor). */
   lapsed: boolean;
   resolvedAt: string;
 }
 
-/** Payload of `monitor.triggered` — an edge-triggered score-monitor condition fired. */
+/** Payload of `monitor.triggered`: an edge-triggered score-monitor condition fired. */
 export interface MonitorTriggeredData {
   monitorId: string;
   /** The platform's external user id. */
@@ -86,14 +86,14 @@ export interface MonitorTriggeredData {
   formulaVersion: string;
 }
 
-/** Payload of `usage.quota_warning` — usage crossed the warning share of the monthly quota. */
+/** Payload of `usage.quota_warning`: usage crossed the warning share of the monthly quota. */
 export interface UsageQuotaWarningData {
   used: number;
   cap: number;
   remaining: number;
   /** The configured warning share of the cap (default 0.8). */
   ratio: number;
-  /** ceil(cap × ratio) — the request count that tripped the warning. */
+  /** ceil(cap × ratio): the request count that tripped the warning. */
   threshold: number;
   /** When the quota period resets (start of next UTC month), ISO 8601. */
   periodEnd: string;
@@ -106,7 +106,7 @@ interface WebhookEventBase {
   /**
    * False when the event was produced by test-mode (`crd_test_` key) activity,
    * true for live activity (Stripe convention). Additive: deliveries recorded
-   * before test mode existed omit it — treat a missing value as live.
+   * before test mode existed omit it. Treat a missing value as live.
    */
   livemode?: boolean;
 }
@@ -143,7 +143,7 @@ export interface VerifyWebhookInput {
   timestampHeader: string | null | undefined;
   /** Reject deliveries whose timestamp drifts more than this (seconds). 0 disables. Default 300. */
   toleranceSeconds?: number;
-  /** Override the current time (unix seconds) — for tests. */
+  /** Override the current time (unix seconds), for tests. */
   nowSeconds?: number;
 }
 
@@ -204,7 +204,7 @@ export async function verifyWebhookSignature(input: VerifyWebhookInput): Promise
 
 /**
  * Verify a webhook and return the parsed, typed event. Throws if verification
- * fails or the body isn't the expected shape — the Stripe-style ergonomic path.
+ * fails or the body isn't the expected shape. This is the Stripe-style ergonomic path.
  */
 export async function constructWebhookEvent(input: VerifyWebhookInput): Promise<WebhookEvent> {
   const result = await verifyWebhookSignature(input);
