@@ -1,3 +1,12 @@
+<p align="center">
+  <a href="https://credda.io">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/creddalockuplongdarktransparent.png">
+      <img alt="Credda" src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/creddalockuplonglighttransparent.png" width="360">
+    </picture>
+  </a>
+</p>
+
 > Source mirror for [`@credda/js`](https://www.npmjs.com/package/@credda/js). Install from npm: `npm install @credda/js`. This repo provides the source and issue tracker; canonical development happens in Credda internal tooling.
 
 # @credda/js
