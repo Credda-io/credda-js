@@ -2010,3 +2010,155 @@ describe('analytics + usage-meter reads', () => {
     expect(seen).toBe(`${BASE}/api/v1/usage/meters?days=7`);
   });
 });
+
+/**
+ * Trust Gateway + Trust Actions.
+ *
+ * Two things here are product constraints rather than plumbing, and both are the
+ * reason the block exists:
+ *
+ *   1. The gateway lives at `/trust/policies`, which is NOT the `/policies`
+ *      threshold-policy mount tested above. Two similarly-named products, two
+ *      different paths, and getting it wrong reaches the wrong engine with a body
+ *      it half-accepts.
+ *   2. `insufficient_evidence` is a THIRD result, not a synonym for
+ *      not_satisfied. A caller must be able to tell "nobody has measured this"
+ *      from "this subject fell short", so the type carries all three.
+ */
+describe('trust gateway', () => {
+  const RULES = { all: [{ field: 'score' as const, operator: 'GTE' as const, value: 80 }] };
+  const POLICY = {
+    id: 'pol_t1',
+    name: 'marketplace-seller-baseline',
+    purpose: 'marketplace_seller' as const,
+    version: 1,
+    isActive: true,
+    livemode: true,
+    rules: RULES,
+    createdAt: '2026-08-13T00:00:00.000Z',
+    updatedAt: '2026-08-13T00:00:00.000Z',
+  };
+
+  it('creates a policy at /trust/policies, not the threshold-policy mount', async () => {
+    const calls = recordingStub(201, POLICY);
+    const r = await new CreddaClient({ apiBase: BASE }).createTrustPolicy(
+      { name: 'marketplace-seller-baseline', purpose: 'marketplace_seller', rules: RULES },
+      'k',
+    );
+    expect(calls[0].url).toBe(`${BASE}/api/v1/trust/policies`);
+    expect(calls[0].url).not.toContain('/api/v1/policies');
+    expect(calls[0].init.method).toBe('POST');
+    expect(calls[0].init.headers.Authorization).toBe('Bearer k');
+    expect(JSON.parse(calls[0].init.body)).toMatchObject({ rules: RULES });
+    expect(r.version).toBe(1);
+  });
+
+  it('reads a PAST version, so a delivered result stays explainable', async () => {
+    const calls = recordingStub(200, { ...POLICY, version: 2 });
+    await new CreddaClient({ apiBase: BASE }).getTrustPolicy('pol_t1', 'k', { version: 2 });
+    expect(calls[0].url).toBe(`${BASE}/api/v1/trust/policies/pol_t1?version=2`);
+  });
+
+  it('evaluates a subject and returns all three results, unmerged', async () => {
+    for (const result of ['satisfied', 'not_satisfied', 'insufficient_evidence'] as const) {
+      const calls = recordingStub(200, {
+        result,
+        policy: { id: 'pol_t1', version: 1 },
+        subject: { reference: 'seller_88' },
+        evaluatedAt: '2026-08-13T00:00:00.000Z',
+        livemode: true,
+        note: 'The decision, and the loss, belong to you.',
+      });
+      const r = await new CreddaClient({ apiBase: BASE }).evaluateTrustPolicy(
+        { subject: 'seller_88', policy: 'pol_t1' },
+        'k',
+      );
+      expect(calls[0].url).toBe(`${BASE}/api/v1/trust/evaluate`);
+      expect(r.result).toBe(result);
+    }
+  });
+
+  it('passes explain through and surfaces the caller\'s own rules back', async () => {
+    const calls = recordingStub(200, {
+      result: 'not_satisfied',
+      subject: { reference: 'seller_88' },
+      evaluatedAt: '2026-08-13T00:00:00.000Z',
+      livemode: true,
+      checks: [{ field: 'score', operator: 'GTE', value: 80, result: 'not_satisfied' }],
+      note: 'n',
+    });
+    const r = await new CreddaClient({ apiBase: BASE }).evaluateTrustPolicy(
+      { subject: 'seller_88', policy: 'pol_t1', explain: true },
+      'k',
+    );
+    expect(JSON.parse(calls[0].init.body).explain).toBe(true);
+    // The caller's OWN threshold comes back, named and with a per-rule verdict.
+    expect(r.checks?.[0]).toMatchObject({ field: 'score', operator: 'GTE', value: 80, result: 'not_satisfied' });
+    // And the subject's evidence does not. A check reports which SIGNAL was
+    // compared and the bound the caller chose; the measured value is absent, so
+    // no sequence of evaluations binary-searches a score the caller was never
+    // authorized to read.
+    expect(Object.keys(r.checks![0]).sort()).toEqual(['field', 'operator', 'result', 'value']);
+    for (const leaked of ['scoreBand', 'confidence', 'verifiedEvents', 'verifiedPlatforms']) {
+      expect(Object.keys(r)).not.toContain(leaked);
+    }
+  });
+});
+
+describe('trust actions (watches)', () => {
+  const WATCH = {
+    id: 'twt_1',
+    policy: 'pol_t1',
+    subject: { reference: 'seller_88' },
+    authorizationBasis: 'platform_relationship' as const,
+    lastResult: null,
+    lastResultAt: null,
+    isActive: true,
+    revokedAt: null,
+    livemode: true,
+    createdAt: '2026-08-13T00:00:00.000Z',
+  };
+
+  it('creates a watch at /trust/watches', async () => {
+    const calls = recordingStub(201, WATCH);
+    const r = await new CreddaClient({ apiBase: BASE }).createTrustWatch(
+      { subject: 'seller_88', policy: 'pol_t1' },
+      'k',
+    );
+    expect(calls[0].url).toBe(`${BASE}/api/v1/trust/watches`);
+    expect(calls[0].init.method).toBe('POST');
+    expect(JSON.parse(calls[0].init.body)).toEqual({ subject: 'seller_88', policy: 'pol_t1' });
+    // Null, not absent: nothing has been delivered yet, and that is a different
+    // fact from "the answer is no".
+    expect(r.lastResult).toBeNull();
+  });
+
+  it('lists watches with the result last DELIVERED, so a missed webhook reconciles', async () => {
+    const calls = recordingStub(200, {
+      data: [{ ...WATCH, lastResult: 'satisfied', lastResultAt: '2026-08-13T01:00:00.000Z' }],
+      nextCursor: null,
+    });
+    const r = await new CreddaClient({ apiBase: BASE }).listTrustWatches('k', { limit: 10 });
+    expect(calls[0].url).toBe(`${BASE}/api/v1/trust/watches?limit=10`);
+    expect(r.data[0].lastResult).toBe('satisfied');
+  });
+
+  it('reports a watch stopped because authorization was withdrawn', async () => {
+    // A revoked share token stops the watch. The row says so rather than simply
+    // going quiet, which would read as a subject who never changed.
+    recordingStub(200, {
+      data: [{ ...WATCH, isActive: false, revokedAt: '2026-08-13T02:00:00.000Z' }],
+      nextCursor: null,
+    });
+    const r = await new CreddaClient({ apiBase: BASE }).listTrustWatches('k');
+    expect(r.data[0].isActive).toBe(false);
+    expect(r.data[0].revokedAt).toBe('2026-08-13T02:00:00.000Z');
+  });
+
+  it('stops watching with a DELETE', async () => {
+    const calls = recordingStub(204, {});
+    await new CreddaClient({ apiBase: BASE }).deleteTrustWatch('twt_1', 'k');
+    expect(calls[0].url).toBe(`${BASE}/api/v1/trust/watches/twt_1`);
+    expect(calls[0].init.method).toBe('DELETE');
+  });
+});
