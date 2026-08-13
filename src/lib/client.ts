@@ -1571,6 +1571,156 @@ export class CreddaClient {
     return this.del(`/policies/${encodeURIComponent(id)}`, apiKey);
   }
 
+  // ── Trust Gateway + Trust Actions ──────────────────────────────────────────
+  //
+  // A DIFFERENT product from the threshold policies above, and the difference is
+  // worth stating because the names are close. A threshold policy watches ONE
+  // condition edge-triggered over time. A Trust Gateway policy is a whole
+  // statement of what YOU require ("score >= 80 AND at least 3 verifying
+  // platforms"), evaluated as one question and answered inline. They share the
+  // evidence and the evidence/decision boundary, not a shape.
+  //
+  // ⚠️ THREE-VALUED, AND THE THIRD VALUE IS THE POINT. `insufficient_evidence`
+  // is NOT `not_satisfied`. A subject nobody has measured yet has not failed your
+  // policy, and code that collapses the two makes Credda assert a negative about
+  // every new subject on the network. Branch on all three.
+  //
+  // The score scale is 0-100, always. A rule written against a 0-1000 model is
+  // rejected at authoring time rather than stored as something no subject could
+  // ever satisfy.
+  //
+  // No evaluation logic lives here. The SDK carries the question and returns the
+  // server's answer; nothing client-side decides a result.
+
+  /**
+   * Create a Trust Gateway policy. `POST /api/v1/trust/policies`.
+   *
+   * `rules` is a tree of `{field, operator, value}` leaves combined with `all` /
+   * `any`. Versions are append-only, so an evaluation can always be re-read
+   * against the exact definition that produced it.
+   *
+   * `purpose` is descriptive and never changes evaluation. Employment, tenancy,
+   * lending, credit and insurance contexts are REFUSED with
+   * `PURPOSE_NOT_PERMITTED`: those are regulated consumer-reporting uses and
+   * Credda is not a consumer reporting agency.
+   */
+  createTrustPolicy(input: CreateTrustPolicyInput, apiKey: string): Promise<TrustPolicy> {
+    return this.post<TrustPolicy>(
+      '/trust/policies',
+      input as unknown as Record<string, unknown>,
+      apiKey,
+    );
+  }
+
+  /** List your Trust Gateway policies, cursor-paginated. `GET /api/v1/trust/policies`. */
+  listTrustPolicies(
+    apiKey: string,
+    query: { limit?: number; cursor?: string } = {},
+  ): Promise<TrustPolicyListPayload> {
+    return this.get<TrustPolicyListPayload>(`/trust/policies${queryString(query)}`, apiKey);
+  }
+
+  /**
+   * Read one policy, at its current version or a past one.
+   * `GET /api/v1/trust/policies/{id}`. Pass `version` to recover the exact rules
+   * behind a result you were given earlier.
+   */
+  getTrustPolicy(
+    id: string,
+    apiKey: string,
+    query: { version?: number } = {},
+  ): Promise<TrustPolicy> {
+    return this.get<TrustPolicy>(
+      `/trust/policies/${encodeURIComponent(id)}${queryString(query)}`,
+      apiKey,
+    );
+  }
+
+  /**
+   * Rename, enable/disable, or publish a new version.
+   * `PATCH /api/v1/trust/policies/{id}`. Supplying `rules` APPENDS a version and
+   * moves the pointer; a stored definition is never rewritten.
+   */
+  updateTrustPolicy(
+    id: string,
+    patch: UpdateTrustPolicyInput,
+    apiKey: string,
+  ): Promise<TrustPolicy> {
+    return this.patch<TrustPolicy>(
+      `/trust/policies/${encodeURIComponent(id)}`,
+      patch as unknown as Record<string, unknown>,
+      apiKey,
+    );
+  }
+
+  /**
+   * Evaluate a policy against a subject. `POST /api/v1/trust/evaluate`.
+   *
+   * Name the subject one of exactly two ways, both of which already carry
+   * authorization: a share token the subject minted and can revoke
+   * (`crd_share_…`), or an `externalId` you have an existing relationship with.
+   * There is deliberately no lookup by email or name, and an unknown subject and
+   * an unauthorized one both answer 404 so this cannot be used to test whether a
+   * Credda id exists.
+   *
+   * Pass exactly one of `policy` (a stored id) or `rules` (a one-off document).
+   * `explain: true` returns YOUR OWN rules with a per-rule verdict, never the
+   * subject's score, counts or history.
+   */
+  evaluateTrustPolicy(input: EvaluateTrustPolicyInput, apiKey: string): Promise<TrustEvaluation> {
+    return this.post<TrustEvaluation>(
+      '/trust/evaluate',
+      input as unknown as Record<string, unknown>,
+      apiKey,
+    );
+  }
+
+  /**
+   * Watch a subject against a stored policy (Trust Actions).
+   * `POST /api/v1/trust/watches`.
+   *
+   * The asynchronous form of {@link evaluateTrustPolicy}: the same question asked
+   * again whenever the subject's evidence moves, delivering
+   * `trust.policy.result_changed` to your webhooks when the ANSWER changes. The
+   * first evaluation arrives with `previous: null`; an unchanged answer sends
+   * nothing.
+   *
+   * IDEMPOTENT on (policy, subject), so a retried call returns the same watch
+   * rather than a second one that would double every future delivery.
+   *
+   * Only a stored, versioned policy can be watched. Inline rules are fine for a
+   * one-off evaluation because nothing is persisted, but a watch fires unattended
+   * for months and the definition behind any result must stay recoverable.
+   *
+   * Authorization is RE-CHECKED on every evaluation, so a share token the subject
+   * revokes stops the watch, and the row then carries `revokedAt`.
+   */
+  createTrustWatch(input: CreateTrustWatchInput, apiKey: string): Promise<TrustWatch> {
+    return this.post<TrustWatch>(
+      '/trust/watches',
+      input as unknown as Record<string, unknown>,
+      apiKey,
+    );
+  }
+
+  /**
+   * List your watches, cursor-paginated. `GET /api/v1/trust/watches`.
+   *
+   * Each row carries `lastResult`, the answer last DELIVERED for it, so a missed
+   * webhook can be reconciled without re-evaluating.
+   */
+  listTrustWatches(
+    apiKey: string,
+    query: { limit?: number; cursor?: string } = {},
+  ): Promise<TrustWatchListPayload> {
+    return this.get<TrustWatchListPayload>(`/trust/watches${queryString(query)}`, apiKey);
+  }
+
+  /** Stop watching. `DELETE /api/v1/trust/watches/{id}`. */
+  deleteTrustWatch(id: string, apiKey: string): Promise<void> {
+    return this.del(`/trust/watches/${encodeURIComponent(id)}`, apiKey);
+  }
+
   // ── Verified Profile (qualifications) ──────────────────────────────────────
   //
   // A SECOND deterministic measure over the same ledger: how much of a person's
@@ -4127,6 +4277,161 @@ export interface UpdatePolicyInput {
 /** Cursor-paginated payload from `listPolicies`. */
 export interface ThresholdPolicyListPayload {
   data:       ThresholdPolicy[];
+  nextCursor: string | null;
+}
+
+// ─── Trust Gateway + Trust Actions ────────────────────────────────────────────
+
+/** The signals a Trust Gateway rule may read, and the only ones. */
+export type TrustRuleField =
+  | 'score'
+  | 'score_band'
+  | 'confidence'
+  | 'verified_events'
+  | 'verified_platforms'
+  | 'subject_type'
+  | 'score_frozen';
+
+/** Comparators. A closed set: no expressions, no callables, nothing evaluated. */
+export type TrustOperator = 'EQ' | 'NEQ' | 'GT' | 'GTE' | 'LT' | 'LTE' | 'IN' | 'EXISTS';
+
+/** One leaf comparison. `value` is absent for `EXISTS`, which asks only whether
+ *  the signal was measured at all. */
+export interface TrustRule {
+  field:     TrustRuleField;
+  operator:  TrustOperator;
+  value?:    number | string | boolean | Array<string | number>;
+}
+
+/**
+ * A rule tree: a leaf, or a non-empty `all` / `any` group. An empty group is
+ * REJECTED rather than treated as vacuously true, which is the classic shape of
+ * a default-allow hole.
+ */
+export type TrustPolicyRules =
+  | TrustRule
+  | { all: TrustPolicyRules[] }
+  | { any: TrustPolicyRules[] };
+
+/**
+ * The three results, and they never collapse into two. `insufficient_evidence`
+ * means the signal was not measured, NOT that the subject fell short.
+ */
+export type TrustPolicyResult = 'satisfied' | 'not_satisfied' | 'insufficient_evidence';
+
+/**
+ * Declared context. Descriptive only. The absent entries are the point: there is
+ * no employment, tenancy, lending, credit or insurance purpose, and asking for
+ * one is refused rather than validated away.
+ */
+export type TrustPolicyPurpose =
+  | 'marketplace_seller'
+  | 'vendor'
+  | 'agent_authorization'
+  | 'business_account'
+  | 'custom';
+
+export interface TrustPolicy {
+  id:        string;
+  name:      string;
+  purpose:   TrustPolicyPurpose;
+  /** Versions are append-only; this is the one currently evaluated. */
+  version:   number;
+  isActive:  boolean;
+  livemode:  boolean;
+  /** Present on create, read and update; omitted from list rows. */
+  rules?:    TrustPolicyRules;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Body for `createTrustPolicy`. */
+export interface CreateTrustPolicyInput {
+  name:     string;
+  purpose?: TrustPolicyPurpose;
+  rules:    TrustPolicyRules;
+}
+
+/** Patch for `updateTrustPolicy`. Supplying `rules` appends a new version. */
+export interface UpdateTrustPolicyInput {
+  name?:     string;
+  isActive?: boolean;
+  rules?:    TrustPolicyRules;
+}
+
+/** Cursor-paginated payload from `listTrustPolicies`. */
+export interface TrustPolicyListPayload {
+  data:       TrustPolicy[];
+  nextCursor: string | null;
+}
+
+/** Body for `evaluateTrustPolicy`. Exactly one of `policy` or `rules`. */
+export interface EvaluateTrustPolicyInput {
+  subject:  string;
+  policy?:  string;
+  rules?:   TrustPolicyRules;
+  explain?: boolean;
+}
+
+/** One rule and how it fared. YOUR threshold, never the subject's value. */
+export interface TrustRuleCheck {
+  field:    TrustRuleField;
+  operator: TrustOperator;
+  value?:   number | string | boolean | Array<string | number>;
+  result:   TrustPolicyResult;
+}
+
+export interface TrustEvaluation {
+  result:      TrustPolicyResult;
+  /** Absent when the policy was supplied inline. */
+  policy?:     { id: string; version: number };
+  subject:     { reference: string };
+  evaluatedAt: string;
+  livemode:    boolean;
+  /** Only when `explain: true` was requested. */
+  checks?:     TrustRuleCheck[];
+  /** Restates the evidence/decision boundary. */
+  note:        string;
+}
+
+/** How the caller was authorized to read the subject. */
+export type TrustAuthorizationBasis = 'share_token' | 'platform_relationship';
+
+export interface TrustWatch {
+  id:      string;
+  /** The stored policy id being watched. */
+  policy:  string;
+  subject: { reference: string };
+  authorizationBasis: TrustAuthorizationBasis;
+  /**
+   * The result last DELIVERED for this watch, or null before the first
+   * evaluation. NOT the current answer: it is what your endpoint was last told,
+   * which is what makes it useful for reconciling a missed delivery.
+   */
+  lastResult:   TrustPolicyResult | null;
+  lastResultAt: string | null;
+  isActive:     boolean;
+  /**
+   * Set when an evaluation found the authorization no longer held (a revoked
+   * share token, or a relationship that no longer exists) and stopped the watch.
+   * This is why a watch went quiet.
+   */
+  revokedAt:    string | null;
+  livemode:     boolean;
+  createdAt:    string;
+  /** Present on create. */
+  note?:        string;
+}
+
+/** Body for `createTrustWatch`. Inline rules are deliberately not watchable. */
+export interface CreateTrustWatchInput {
+  subject: string;
+  policy:  string;
+}
+
+/** Cursor-paginated payload from `listTrustWatches`. */
+export interface TrustWatchListPayload {
+  data:       TrustWatch[];
   nextCursor: string | null;
 }
 
