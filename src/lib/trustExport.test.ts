@@ -58,7 +58,7 @@ beforeEach(async () => {
 describe('verifyTrustExport', () => {
   it('verifies a well-formed export and returns the signed facts', async () => {
     const vc = await signVc('Excellent');
-    const res = await verifyTrustExport(bundle(vc, 'Excellent'), { jwks, checkRevocation: false });
+    const res = await verifyTrustExport(bundle(vc, 'Excellent'), { jwks, checkRevocation: false, apiBase: 'https://api.test' });
     expect(res.credential.valid).toBe(true);
     expect((res.credential.cred as { scoreBand: string }).scoreBand).toBe('Excellent');
   });
@@ -66,13 +66,13 @@ describe('verifyTrustExport', () => {
   it('rejects an unrecognised format', async () => {
     const vc = await signVc('Excellent');
     const b = { ...bundle(vc, 'Excellent'), format: 'nope' } as unknown as TrustExport;
-    await expect(verifyTrustExport(b, { jwks, checkRevocation: false })).rejects.toThrow(/format/);
+    await expect(verifyTrustExport(b, { jwks, checkRevocation: false, apiBase: 'https://api.test' })).rejects.toThrow(/format/);
   });
 
   it('rejects a tampered plaintext score (mismatch with signed credential)', async () => {
     const vc = await signVc('Excellent');           // signed says Excellent
     const b = bundle(vc, 'High Risk');              // plaintext edited to High Risk
-    await expect(verifyTrustExport(b, { jwks, checkRevocation: false })).rejects.toThrow(/does not match|tampered/i);
+    await expect(verifyTrustExport(b, { jwks, checkRevocation: false, apiBase: 'https://api.test' })).rejects.toThrow(/does not match|tampered/i);
   });
 
   it('rejects when the credential signature is invalid (wrong key)', async () => {
@@ -80,6 +80,6 @@ describe('verifyTrustExport', () => {
     const other = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
     const pub = (await crypto.subtle.exportKey('jwk', other.publicKey)) as { kty: string; crv: string; x: string };
     const wrongJwks = { keys: [{ kty: pub.kty, crv: pub.crv, x: pub.x, kid: 'key-1' }] };
-    await expect(verifyTrustExport(bundle(vc, 'Excellent'), { jwks: wrongJwks, checkRevocation: false })).rejects.toThrow(/signature/);
+    await expect(verifyTrustExport(bundle(vc, 'Excellent'), { jwks: wrongJwks, checkRevocation: false, apiBase: 'https://api.test' })).rejects.toThrow(/signature/);
   });
 });

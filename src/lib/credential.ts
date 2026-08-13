@@ -40,6 +40,20 @@ interface Ed25519Jwk {
 const DEFAULT_BASE = 'https://api.credda.io';
 const JWKS_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * The did:web identity of an API origin. `https://api.credda.io` is
+ * `did:web:api.credda.io`, and a staging or self-hosted base yields its own,
+ * which is what makes "expect Credda" mean "expect the Credda THIS CLIENT talks
+ * to" rather than hardcoding production.
+ */
+function didWebFor(apiBase: string): string | null {
+  try {
+    return `did:web:${new URL(apiBase).host.toLowerCase()}`;
+  } catch {
+    return null;
+  }
+}
+
 let jwksCache: { uri: string; keys: Ed25519Jwk[]; fetchedAt: number } | null = null;
 
 function b64urlToBytes(s: string): Uint8Array {
@@ -165,8 +179,22 @@ export interface VerifyVcOptions {
   /** Fallback JWKS base if the DID can't be resolved. */
   apiBase?: string;
   jwks?: { keys: Ed25519Jwk[] };
-  /** Expected issuer DID. */
-  issuer?: string;
+  /**
+   * Expected issuer DID. Defaults to the DID of `apiBase`, i.e. Credda.
+   *
+   * ⚠️ THE DEFAULT IS THE SECURITY PROPERTY. did:web resolution proves a
+   * credential was signed by whoever controls the DID's host; it does NOT prove
+   * that host is Credda. Without this check a credential minted by anyone with
+   * a domain verifies as `{ valid: true }`, and a caller reading `.valid` (the
+   * obvious thing to read) accepts fabricated facts. Verified as a real hole
+   * before this default existed.
+   *
+   * Pass `null` to accept ANY issuer whose signature checks out. That is the
+   * federation case, and it is deliberately explicit: the caller is then
+   * responsible for deciding whether the issuer in the result is one they
+   * trust.
+   */
+  issuer?: string | null;
   /**
    * Check StatusList2021 revocation when the credential carries a
    * `credentialStatus` (default: true). Set false to skip the network fetch.
@@ -307,7 +335,17 @@ export async function verifyVerifiableCredential(
   const payload = decodeJson<{ iss: string; sub: string; nbf?: number; iat?: number; exp?: number; vc?: Record<string, unknown> }>(p);
   const now = Math.floor(Date.now() / 1000);
   if (typeof payload.exp === 'number' && now >= payload.exp) throw new Error('credda: credential expired');
-  if (opts.issuer && payload.iss !== opts.issuer) throw new Error('credda: issuer mismatch');
+  // `undefined` means "Credda", derived from the base this client talks to so a
+  // staging or self-hosted client expects ITS OWN issuer rather than
+  // production's. `null` is the explicit federation opt-out.
+  const expectedVcIssuer =
+    opts.issuer === undefined ? didWebFor(opts.apiBase ?? DEFAULT_BASE) : opts.issuer;
+  if (expectedVcIssuer && payload.iss !== expectedVcIssuer) {
+    throw new Error(
+      `credda: issuer mismatch (expected ${expectedVcIssuer}, got ${payload.iss}). ` +
+        'Pass issuer: null to accept a federated issuer, then check the issuer yourself.',
+    );
+  }
 
   const vc = payload.vc ?? {};
 

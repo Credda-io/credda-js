@@ -81,19 +81,19 @@ function stubFetchWith(listVc: string) {
 describe('verifyVerifiableCredential + StatusList2021 revocation', () => {
   it('accepts a credential whose bit is clear', async () => {
     stubFetchWith(await statusListVc([999])); // some other index revoked
-    const res = await verifyVerifiableCredential(await trustVc(42), { jwks });
+    const res = await verifyVerifiableCredential(await trustVc(42), { jwks, apiBase: 'https://api.test' });
     expect(res.valid).toBe(true);
     expect(res.cred.scoreBand).toBe('Excellent');
   });
 
   it('rejects a credential whose bit is set (revoked)', async () => {
     stubFetchWith(await statusListVc([42]));
-    await expect(verifyVerifiableCredential(await trustVc(42), { jwks })).rejects.toThrow(/revoked/);
+    await expect(verifyVerifiableCredential(await trustVc(42), { jwks, apiBase: 'https://api.test' })).rejects.toThrow(/revoked/);
   });
 
   it('skips the check when checkRevocation is false', async () => {
     stubFetchWith(await statusListVc([42]));
-    const res = await verifyVerifiableCredential(await trustVc(42), { jwks, checkRevocation: false });
+    const res = await verifyVerifiableCredential(await trustVc(42), { jwks, checkRevocation: false, apiBase: 'https://api.test' });
     expect(res.valid).toBe(true);
   });
 
@@ -104,7 +104,7 @@ describe('verifyVerifiableCredential + StatusList2021 revocation', () => {
     const badList = await statusListVc([]);
     priv = realPriv;
     stubFetchWith(badList);
-    await expect(verifyVerifiableCredential(await trustVc(1), { jwks })).rejects.toThrow(/signature/);
+    await expect(verifyVerifiableCredential(await trustVc(1), { jwks, apiBase: 'https://api.test' })).rejects.toThrow(/signature/);
   });
 });
 
