@@ -4401,6 +4401,13 @@ export interface TrustWatch {
   id:      string;
   /** The stored policy id being watched. */
   policy:  string;
+  /**
+   * Your own reference. An `externalId` is echoed verbatim; a SHARE TOKEN is
+   * MASKED (prefix plus last four characters), here and in every
+   * `trust.policy.result_changed` payload, because a live token is a bearer
+   * capability and those surfaces are persisted in the delivery log and fanned
+   * out to notification channels. Map on `id`, not on this string.
+   */
   subject: { reference: string };
   authorizationBasis: TrustAuthorizationBasis;
   /**
@@ -4858,6 +4865,26 @@ export interface ReliabilityReport {
     dataState?:        ReasonCodeDataState;
   };
   verifiedExperience: ProfessionalRecord['verifiedExperience'] & { tenure: ProfessionalRecordTenure };
+  /**
+   * What third parties have CONFIRMED about the record the subject presents.
+   *
+   * Counts only, deliberately: no referee name, address or text. A referee is a
+   * real person who agreed to confirm a fact, not to be listed to whoever holds
+   * the share. A re-projection of the Verified Profile, so the two can never
+   * disagree, and qualifications never reach the reliability score.
+   *
+   * OPTIONAL because an API deployment older than report version 1.1 omits it,
+   * and absent must stay distinguishable from "this person has no references".
+   */
+  references?: {
+    verified:           number;
+    claimed:            number;
+    selfAttested:       number;
+    /** `null` when nothing is claimed — never 0, which would read as "none of it checks out". */
+    verificationDepth:  number | null;
+    recordVerification: { state: string; label: string; verified: number; claimed: number };
+    byCategory:         Record<string, { claimed: number; verified: number; verificationDepth: number | null }>;
+  };
   topFactors:     ReliabilityReportFactor[];
   recentOutcomes: ReliabilityReportOutcome[];
   benchmark:      { cohort: string; comparison: string } | null;
