@@ -419,6 +419,24 @@ credential carries a `credentialStatus`, it fetches + signature-verifies the sta
 list and rejects a revoked credential. Check status directly with `isCredentialRevoked`,
 or skip the network with `{ checkRevocation: false }`.
 
+### The issuer is checked by default
+
+`did:web` resolution proves a credential was signed by whoever controls the DID's
+host. It does **not** prove that host is Credda. So the expected issuer defaults
+to the DID of the API base this client talks to (`did:web:api.credda.io` by
+default, or your own host if you set `apiBase`), and a credential from anyone
+else is rejected even though its signature is genuine.
+
+```ts
+// Rejected: signed by someone with a domain, not by Credda.
+await verifyVerifiableCredential(foreignVcJwt);
+// credda: issuer mismatch (expected did:web:api.credda.io, got did:web:elsewhere.example)
+
+// Federation: accept any issuer whose signature checks out, then decide yourself.
+const v = await verifyVerifiableCredential(foreignVcJwt, { issuer: null });
+if (!myTrustedIssuers.has(v.issuer)) throw new Error('untrusted issuer');
+```
+
 ## Portable trust export
 
 Fetch a self-verifying bundle a user owns (current score + history + signed W3C
