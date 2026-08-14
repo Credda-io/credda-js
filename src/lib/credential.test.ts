@@ -62,6 +62,19 @@ function trustVc(index: number): Promise<string> {
   });
 }
 
+/** The same shape as trustVc, but issued by somebody who is not Credda. */
+function foreignVc(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return signJwt({
+    iss: 'did:web:evil.example', sub: 'urn:credda:token:abc', nbf: now, iat: now, exp: now + 3600,
+    vc: {
+      '@context': ['https://www.w3.org/2018/credentials/v1'],
+      type: ['VerifiableCredential', 'CreddaTrustCredential'], issuer: 'did:web:evil.example',
+      credentialSubject: { id: 'urn:credda:token:abc', scope: 'full', scoreBand: 'Excellent' },
+    },
+  });
+}
+
 beforeEach(async () => {
   const pair = await crypto.subtle.generateKey({ name: 'Ed25519' }, true, ['sign', 'verify']);
   priv = pair.privateKey;
@@ -118,5 +131,31 @@ describe('isCredentialRevoked with a preloaded list', () => {
 
   it('rejects an invalid index', async () => {
     await expect(isCredentialRevoked({ ...status, statusListIndex: 'x' }, { statusList: { encodedList: encodeList([]) } })).rejects.toThrow(/invalid statusListIndex/);
+  });
+});
+
+describe('a credential counts as Credda only if Credda issued it', () => {
+  // Published 0.7.0 only checked the issuer when the caller named one, so a VC
+  // signed by anyone holding a did:web verified as valid. The signature is real
+  // either way; what it proves is only ever "this key signed it".
+  it('rejects a foreign issuer by default', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('should not fetch'); }));
+    await expect(
+      verifyVerifiableCredential(await foreignVc(), { jwks, apiBase: 'https://api.test' }),
+    ).rejects.toThrow(/issuer mismatch/);
+  });
+
+  it('still accepts the issuer that base names, so it does not reject everything', async () => {
+    stubFetchWith(await statusListVc([]));
+    const res = await verifyVerifiableCredential(await trustVc(7), { jwks, apiBase: 'https://api.test' });
+    expect(res.valid).toBe(true);
+  });
+
+  it('accepts a foreign issuer only when federation is opted into explicitly', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('should not fetch'); }));
+    const res = await verifyVerifiableCredential(await foreignVc(), {
+      jwks, apiBase: 'https://api.test', issuer: null, checkRevocation: false,
+    });
+    expect(res.valid).toBe(true);
   });
 });

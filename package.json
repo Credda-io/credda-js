@@ -1,6 +1,6 @@
 {
   "name": "@credda/js",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Official Credda SDK for TypeScript and JavaScript: typed client, React hooks, and offline credential verification.",
   "license": "MIT",
   "homepage": "https://github.com/Credda-io/credda-js#readme",
