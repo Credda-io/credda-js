@@ -24,16 +24,9 @@ jobs:
       - run: npm run build
 
   surface-parity:
-    # This package is also kept in the private Credda-io/api monorepo, at
-    # packages/sdk. The two copies are published from here and only review kept
-    # them the same. This compares the exported surface of both trees and fails
-    # on any difference not recorded, with a reason, in the monorepo's
-    # scripts/package-surface-known.json.
-    #
-    # MONOREPO_READ_TOKEN is a read-only token for the private monorepo. Without
-    # it this job fails rather than skipping, because a parity check that
-    # silently does not run is worse than none. Fork PRs do not get the secret
-    # and will fail here by design.
+    # Fails rather than skips when MONOREPO_READ_TOKEN is absent, so fork PRs
+    # fail here by design: a parity check that silently does not run is worse
+    # than none.
     name: surface parity with the monorepo
     runs-on: ubuntu-latest
     steps:
