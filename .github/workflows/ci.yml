@@ -23,6 +23,35 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  surface-parity:
+    # This package is also kept in the private Credda-io/api monorepo, at
+    # packages/sdk. The two copies are published from here and only review kept
+    # them the same. This compares the exported surface of both trees and fails
+    # on any difference not recorded, with a reason, in the monorepo's
+    # scripts/package-surface-known.json.
+    #
+    # MONOREPO_READ_TOKEN is a read-only token for the private monorepo. Without
+    # it this job fails rather than skipping, because a parity check that
+    # silently does not run is worse than none. Fork PRs do not get the secret
+    # and will fail here by design.
+    name: surface parity with the monorepo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mirror
+      - uses: actions/checkout@v4
+        with:
+          repository: Credda-io/api
+          token: ${{ secrets.MONOREPO_READ_TOKEN }}
+          path: monorepo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compare
+        run: |
+          node monorepo/scripts/package-surface.mjs monorepo/packages/sdk mirror monorepo/scripts/package-surface-known.json
+
   secret-scan:
     name: gitleaks
     runs-on: ubuntu-latest
