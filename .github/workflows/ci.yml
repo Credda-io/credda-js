@@ -23,6 +23,28 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  surface-parity:
+    # Fails rather than skips when MONOREPO_READ_TOKEN is absent, so fork PRs
+    # fail here by design: a parity check that silently does not run is worse
+    # than none.
+    name: surface parity with the monorepo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mirror
+      - uses: actions/checkout@v4
+        with:
+          repository: Credda-io/api
+          token: ${{ secrets.MONOREPO_READ_TOKEN }}
+          path: monorepo
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compare
+        run: |
+          node monorepo/scripts/package-surface.mjs monorepo/packages/sdk mirror monorepo/scripts/package-surface-known.json
+
   secret-scan:
     name: gitleaks
     runs-on: ubuntu-latest
