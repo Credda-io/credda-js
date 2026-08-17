@@ -1,25 +1,40 @@
 # Brand artwork
 
 Two files, both COPIED byte for byte out of the Credda brand folder's
-`collateral/`, where `build-collateral.mjs` generates them. Nothing here is
-drawn, resized, recolored or composited in this repository.
+`brand-seal/`, where `build-seal.mjs` generates them. Nothing here is drawn,
+resized, recolored or composited in this repository.
 
 | File | What it is |
 | --- | --- |
-| `creddalockuplonglighttransparent.png` | The long lockup, orange `#C2410C`, for a light background. |
-| `creddalockuplongdarktransparent.png` | The long lockup, blue `#5B9BFF`, for a dark background. |
+| `creddaseallockuplighttransparent.png` | The Seal lockup, orange `#C2410C`, for a light background. |
+| `creddaseallockupdarktransparent.png` | The Seal lockup, blue `#5B9BFF`, for a dark background. |
 
-The LONG lockup is the wordmark first and the three-lobe mark after it, with no
-rule between them. It is the form to reach for anywhere wide and horizontal,
-which is what a README header is. The mark never appears on its own here, and
-the retired standalone C appears nowhere at all.
+The lockup is the wordmark first and the mark after it, with no rule and no
+divider between them. It is the form to reach for anywhere wide and horizontal,
+which is what a README header is. The mark never appears on its own here.
+
+The mark is the **Seal**: a thick ring with five short notches cut into one
+side, a run down the lower left and the rest of the rim smooth. An append-only
+record where every confirmed job is a notch cut into the same seal, and the one
+clean gap is where the next one goes.
+
+Its rotational symmetry is broken on purpose. Twelve evenly spaced notches with
+one gap is a cog, and a cog is stock engineering iconography; what stops this
+being one is that the notches are a run down one side and the rest of the rim is
+untouched, because the record is not finished. `build-seal.mjs` measures that run
+off the encoded bytes of every file carrying the mark, so an edit that quietly
+balances it fails the build rather than shipping.
+
+These replace `creddalockuplong{light,dark}transparent.png`, the retired long
+lockup from `collateral/`, which carried the previous three-lobe mark. The
+retired standalone C appears nowhere at all.
 
 ## Rules
 
 **Never hand-edit these.** They are generated output. To change them, change the
-masters in the brand folder, run `node build-collateral.mjs`, and copy the
-result across again. `build-collateral.mjs --check` fails if a file on disk has
-drifted from what the generator produces.
+masters in the brand folder, run `node build-seal.mjs`, and copy the result
+across again. `build-seal.mjs --check` fails if a file on disk has drifted from
+what the generator produces.
 
 **Copy the pixels, do not composite them.** Pasting an RGBA image using itself
 as a mask blends every partially transparent pixel toward the empty canvas, so
