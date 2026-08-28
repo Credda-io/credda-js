@@ -274,22 +274,35 @@ never retried either: a degraded database does not recover by being asked twice.
 ## Status of the fix path
 
 Credda's product is the fix: reproduce, diagnose, patch, prove, open a pull
-request. Two things a user will look for are not on this API **today**, and both
-are statuses with a date on them rather than positions:
+request. What a user will look for and not find **on this HTTP API** is below,
+and it is a status with a date on it rather than a position:
 
-- **No pull-request route.** Nothing here returns a PR link or opens one.
-  Opening a pull request needs Contents write and Pull requests write, which
-  today's install does not ask for. The read-only permission set is a current
-  configuration, not a feature.
-- **`patches`, `verifications` and `resolution.fix` are typed, served, and
-  empty on runs made so far.** The API serializes them on every investigation
-  detail and every resolution record. They fill in when the engine runs the
-  patch path, which is gated on a model-backed provider being configured
-  (ADR 0018, condition 1). As of **August 2026**, no such run exists, so a
-  resolution's `fix` is `null` and the gap is named in
-  `confidence.notEstablished` rather than papered over.
+- **No pull-request route, as of 2026-08-28.** Nothing here returns a PR link or
+  opens one. The engine does open pull requests -- its GitHub App asks an
+  operator for Contents write and Pull requests write, and its delivery path
+  uses them for a run that reaches a proven verdict -- but that happens on the
+  engine's own delivery path and is not surfaced as a route here. When a route
+  appears, a method appears; this package will not invent one in the meantime.
+- **`patches`, `verifications` and `resolution.fix` are typed and served, and
+  are `null` or empty on a run that did not enter the patch stage.** The API
+  serializes them on every investigation detail and every resolution record.
+  They fill in when the engine runs the patch path, which is gated on a
+  model-backed provider being configured. **This bullet said, until 2026-08-28,
+  that no such run exists and that the fields are empty on every run made so
+  far.** That was measured and true when written; it is not now. A model-backed
+  run happened on 2026-08-27, ADR 0019 put the Fixer and the Verifier back on
+  the investigation path the same day, and the following day the engine's
+  delivery path was wired to open a pull request for a run that reaches a proven
+  verdict.
 
-This package will not invent either one. When a route appears, a method appears.
+  What did **not** change is the rule that made the old sentence worth writing:
+  a stage that did not run is never reported as a measured zero. Against the
+  deterministic heuristic provider the fix stage is not entered at all, so
+  `fix` is `null` and the gap is named in `confidence.notEstablished` rather
+  than papered over. Read `null` as "this run did not establish it", never as
+  "there was nothing to establish" -- the distinction this client's pointer
+  discipline exists for.
+
 
 ## Requirements
 
