@@ -23,27 +23,21 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  surface-parity:
-    # Fails rather than skips when MONOREPO_READ_TOKEN is absent, so fork PRs
-    # fail here by design: a parity check that silently does not run is worse
-    # than none.
-    name: surface parity with the monorepo
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: mirror
-      - uses: actions/checkout@v4
-        with:
-          repository: Credda-io/api
-          token: ${{ secrets.MONOREPO_READ_TOKEN }}
-          path: monorepo
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Compare
-        run: |
-          node monorepo/scripts/package-surface.mjs monorepo/packages/sdk mirror monorepo/scripts/package-surface-known.json
+  # surface-parity WAS HERE AND IS DELETED ON PURPOSE.
+  #
+  # It checked this package's surface against `monorepo/packages/sdk` in
+  # Credda-io/api. That package was the trust SDK, and both it and the product
+  # it spoke to are retired. This repository is no longer a mirror of anything
+  # in that monorepo -- it is an independent client of the engine API -- so the
+  # check has no subject left. Repointing it at the engine would have been
+  # inventing a parity that does not exist; leaving it would have failed every
+  # run, and a red check nobody can fix is how a suite stops being read.
+  #
+  # What replaced it lives in this repository and is stronger, because it does
+  # not need a cross-repo token to run: `src/lib/surface.test.ts`
+  # asserts the client's method list equals the engine's route list exactly and that no trust-era name has come back.
+  #
+  # MONOREPO_READ_TOKEN is now unused by this workflow and can be revoked.
 
   secret-scan:
     name: gitleaks

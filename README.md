@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://credda.io">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/creddaseallockupdarktransparent.png">
-      <img alt="Credda" src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/creddaseallockuplighttransparent.png" width="480">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-lockup-white.png">
+      <img alt="Credda" src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-lockup-black.png" width="480">
     </picture>
   </a>
 </p>
@@ -11,8 +11,25 @@
 
 # @credda/js
 
-Client SDK for the Credda reliability-score API. React hooks + a headless
-client, fully typed against the live API.
+> ### ⚠️ 1.0.0 is a different package from 0.8.0
+>
+> Versions `0.x` of this name were a client for a **reliability-score API**:
+> `useScore`, `useTrustToken`, share tokens, verifiable credentials, disputes,
+> webhooks. Credda no longer builds that product, and **none of that surface
+> exists in 1.0.0**. Nothing was renamed and nothing is deprecated — it is gone.
+>
+> `1.0.0` is a client for the **Credda engine**, which finds defects and
+> vulnerabilities in your code and proposes fixes. Upgrading from `0.x` is a
+> rewrite, not a migration, and there is no compatibility layer. If you depend
+> on the trust client, **pin `@credda/js@0.8.0`**; see [CHANGELOG.md](CHANGELOG.md).
+
+Credda finds the bugs and security vulnerabilities in a company's production and
+QA environments, reproduces the failure, diagnoses the cause, writes the patch,
+proves it with a test that fails before and passes after, and opens a pull
+request. It proposes and never merges.
+
+This package is the typed TypeScript client and React hooks for the engine's
+HTTP API — one method per route, and no method without one.
 
 ```bash
 npm install @credda/js
@@ -20,476 +37,257 @@ npm install @credda/js
 
 ## Two entry points
 
-The package has two entry points, and picking the wrong one is the most common
-first-run failure.
-
 | Import | Contains | Needs React |
 | --- | --- | --- |
-| `@credda/js/headless` | `CreddaClient`, offline credential + webhook verification | no |
-| `@credda/js` | everything above, plus `CreddaProvider`, `useScore`, `useTrustToken` | **yes** |
+| `@credda/js/headless` | `CreddaClient`, the wire types, `CreddaError`, the SSE reader | no |
+| `@credda/js` | everything above, plus `CreddaProvider` and the hooks | **yes** |
 
-React is an *optional* peer dependency, so a plain `npm install @credda/js` in a
-Node service installs no React. Import the root entry there and it fails with
+React is an *optional* peer dependency, so `npm install @credda/js` in a Node
+service installs no React. Import the root entry there and it fails with
 `Cannot find package 'react'`. On a server, import `@credda/js/headless`.
 
+## Getting started
+
 ```ts
-// Node / any server runtime: no React required
 import { CreddaClient } from '@credda/js/headless';
 
-const credda = new CreddaClient({ apiBase: 'https://api.credda.io' });
-const trust = await credda.resolveToken('crd_share_…'); // public, no API key
-console.log(trust.finalScore, trust.scoreBand);
+const credda = new CreddaClient({
+  baseUrl: 'https://credda.internal', // your deployment. There is no default.
+  apiKey: process.env.CREDDA_API_KEY,
+});
+
+const { investigations, total } = await credda.listInvestigations({ state: 'REPRODUCED' });
+console.log(`${investigations.length} of ${total}`);
 ```
 
-## Two access models
+There is **no default base URL**. Credda runs against your own deployment, and a
+built-in hostname would be this package guessing where your engine lives — a
+wrong guess that sends your bearer key there.
 
-| Model        | Method / hook                     | Auth              | Where it's safe        |
-| ------------ | --------------------------------- | ----------------- | ---------------------- |
-| **Public**   | `resolveToken` / `useTrustToken`  | a share token     | browser or server      |
-| **Platform** | `getScore` / `useScore`, etc.     | `crd_live_…` key  | **server-side only**   |
+### One credential, and it is not a browser credential
 
-> Never ship a platform API key (`crd_live_…`) in a browser bundle. For
-> in-browser trust displays, mint a share token server-side and use the public
-> path.
+Every route under `/api` sits behind one bearer gate. The key identifies an
+**organisation, not a person**: `api_keys` has an `org_id` and no `user_id`, and
+no scopes column. So there is exactly one kind of key, it reads every
+investigation, patch, finding and resolution in the organisation, and there is
+no narrower credential to hand to an untrusted page.
 
-> **Test mode:** pass a sandbox key (`crd_test_…`) instead of a live one. No
-> other change. Test keys read/write only your platform's isolated test
-> universe (scored by the identical formula), test webhooks arrive with
-> `livemode: false` on the envelope, and `DELETE /api/v1/test/data` resets it.
-> Share tokens/credentials refuse test mode (`TEST_MODE_NOT_ALLOWED`).
+There is no public, key-less route on this API. If you are building something a
+customer sees, put it behind your own login and inject the key server-side.
 
-## React: public trust badge
+`/livez` is the one exception — no credential, and it answers 204 with an empty
+body and nothing else.
+
+## What the API serves
+
+Every method below maps to one route in the engine. Almost all of it is read:
+the engine is driven by the worker and the CLI, and the only write this API
+accepts is opening an investigation.
+
+### Investigations — a reported failure being chased down
+
+| Method | Route |
+| --- | --- |
+| `listInvestigations({ state, limit, offset })` | `GET /api/investigations` |
+| `createInvestigation({ repositoryId, issueTitle, issueBody, issueRef? })` | `POST /api/investigations` |
+| `getInvestigation(id)` | `GET /api/investigations/:id` |
+| `listInvestigationEvents(id, { since, limit, includeDebug })` | `GET /api/investigations/:id/events` |
+| `listInvestigationEvidence(id, { type, limit, offset })` | `GET /api/investigations/:id/evidence` |
+| `streamInvestigation(id, { since, reconnect })` | `GET /api/investigations/:id/stream` (SSE) |
+
+`createInvestigation` creates the row in state `CREATED` and returns. **It does
+not start the run** — the API does not execute anything; the worker does. What
+you watch it with is the event stream.
+
+### Validations — a change being checked before it lands
+
+| Method | Route |
+| --- | --- |
+| `listValidations({ repository, state, outcome, limit, offset })` | `GET /api/validations` |
+| `getValidation(id)` | `GET /api/validations/:id` |
+| `listValidationChecks(id, { limit, offset })` | `GET /api/validations/:id/checks` |
+| `listFindings(id, { limit, offset })` | `GET /api/validations/:id/findings` |
+| `listValidationEvidence(id, { limit, offset })` | `GET /api/validations/:id/evidence` |
+| `listValidationEvents(id, { since, limit, includeDebug })` | `GET /api/validations/:id/events` |
+| `streamValidation(id, { since, reconnect })` | `GET /api/validations/:id/stream` (SSE) |
+
+Read-only over HTTP. There is no route that starts a validation; they arrive
+from a webhook, the CLI or a schedule.
+
+Two fields carry most of the meaning. A check's `baseStatus` is the base-commit
+re-run: `FAILED` there means the check passes on the base and fails on the head,
+so *this change* caused it — and `null` means the base has not been consulted,
+never that it was fine. `environment.status` is the other: a run that ended
+`BLOCKED` could not be executed at all, and must not be rendered as a failure of
+the change.
+
+### Resolutions — what a run established, and what it did not
+
+| Method | Route |
+| --- | --- |
+| `listResolutions({ investigation, signalId, confidence, limit, offset })` | `GET /api/resolutions` |
+| `latestResolution(investigationId)` | `GET /api/resolutions/latest` |
+| `getResolution(id)` | `GET /api/resolutions/:id` |
+
+`confidence.class` and `confidence.notEstablished` are one fact written twice.
+Render them together: the class without the gaps is a bare assertion, and it is
+the field a reviewer reads to decide whether to trust a fix. There is no number
+anywhere on a resolution's confidence, deliberately — no score, no ratio,
+nothing for a progress bar to consume.
+
+`latestResolution` returning `{ resolution: null }` means the investigation
+exists and has resolved nothing yet. That is an answer, and it is different from
+a 404 for an id that does not exist. Render them differently.
+
+### Repositories, memory, workspace and operations
+
+| Method | Route |
+| --- | --- |
+| `listRepositories({ limit, offset })` | `GET /api/repositories` |
+| `listLearnings(repositoryId, { kind, limit, offset })` | `GET /api/repositories/:id/learnings` |
+| `getOrganization()` | `GET /api/organization` |
+| `listMembers({ limit, offset })` | `GET /api/organization/members` |
+| `listApiKeys({ limit, offset })` | `GET /api/organization/keys` |
+| `getHealth()` | `GET /api/health` (readiness) |
+| `isLive()` | `GET /livez` (liveness, unauthenticated) |
+| `getMetrics()` | `GET /api/metrics` (Prometheus text) |
+
+`getHealth()` returns the readiness report on a degraded deployment too, where
+the server answers **503** with that same body. Branch on `status`, not on
+whether the call threw. `getMetrics()` covers the API process only — the
+investigation, reproduction and model-usage counters live in the worker, which
+is a separate process with its own registry. Scrape both.
+
+`listApiKeys` includes revoked keys, on purpose: "this key was revoked on the
+3rd" is the answer an operator came for. There is no create and no revoke,
+because the API has neither — keys are minted out of band by the operator today.
+
+## React
 
 ```tsx
-import { CreddaProvider, useTrustToken } from '@credda/js';
+import { CreddaProvider, useInvestigation, useInvestigationEvents } from '@credda/js';
 
-function Badge({ token }: { token: string }) {
-  const { data, loading, error } = useTrustToken(token);
+function Investigation({ id }: { id: string }) {
+  const { data, loading } = useInvestigation(id);
+  const { events, streaming } = useInvestigationEvents(id);
+
   if (loading) return <span>…</span>;
-  if (error || !data) return null;
-  return <span>{data.finalScore}/100 · {data.scoreBand}</span>;
+  if (!data) return null;
+
+  return (
+    <section>
+      <h2>{data.investigation.issueTitle}</h2>
+      <p>{data.investigation.state}{streaming ? ' · live' : ''}</p>
+      <ol>
+        {events.map((e) => (
+          <li key={e.id}>{e.summary}</li>
+        ))}
+      </ol>
+    </section>
+  );
 }
 
 export default function App() {
   return (
-    <CreddaProvider apiBase="https://api.credda.io">
-      <Badge token="crd_share_…" />
+    <CreddaProvider baseUrl="https://credda.internal" apiKey={key}>
+      <Investigation id="inv_…" />
     </CreddaProvider>
   );
 }
 ```
 
-## Headless client (server-side)
+| Hook | What it reads |
+| --- | --- |
+| `useInvestigations(query)` | a page of investigations, with `total` |
+| `useInvestigation(id)` | one investigation and everything hanging off it |
+| `useInvestigationEvents(id, opts)` | its live timeline (SSE) |
+| `useResolution(investigationId)` | the latest resolution record, or `null` |
+| `useValidation(id)` | one validation run |
+| `useValidationEvents(id, opts)` | its live timeline (SSE) |
+
+## The event stream is SSE, and is read with `fetch`
+
+The engine serves `text/event-stream`: `id:`/`event:`/`data:` frames, a
+`: heartbeat` comment every 15 seconds, `Last-Event-ID` for resumption. It is
+not a WebSocket.
+
+This package reads it with `fetch` and a stream reader rather than with the
+browser's `EventSource`, because **`EventSource` cannot set a request header**
+and every `/api` route requires `Authorization: Bearer`. `EventSource` can only
+reach this API on a deployment running `CREDDA_AUTH=disabled`.
+
+Outside React, stream it directly:
 
 ```ts
-import { CreddaClient } from '@credda/js/headless';
-
-const credda = new CreddaClient({ apiBase: 'https://api.credda.io' });
-
-// Public: no key
-const trust = await credda.resolveToken('crd_share_…');
-
-const key = process.env.CREDDA_API_KEY!; // server-side only, never ship to a browser
-
-// Platform reads
-const score   = await credda.getScore('user-123', key);
-const explain = await credda.getScoreExplain('user-123', key);
-const history = await credda.getScoreHistory('user-123', key, { limit: 30 });
-const plats   = await credda.getPlatforms('user-123', key);
-const risk    = await credda.getRisk('user-123', key);   // advisory, never affects the score
-const usage   = await credda.getUsage(key);              // your consumption vs. tier quota
-
-// Platform writes
-await credda.reportEvent(
-  { userId: 'user-123', eventType: 'CONTRACT_FULFILLED', transactionValue: 500 },
-  key,
-  { idempotencyKey: 'commitment:abc:fulfilled' },        // stable → exactly-once retries
-);
-const { token } = await credda.mintShareToken('user-123', key);   // powers badge/verify/export
-await credda.revokeShareToken('user-123', key);
-await credda.resolveDispute('dispute-1', 'FOR_USER', key);
-
-// Public: no key
-const bundle = await credda.getTrustExport('crd_share_…'); // portable, self-verifying export
-
-// Webhook subscriptions
-const { secret } = await credda.createWebhook({ url: 'https://hooks.you/credda', events: ['score.band_changed'] }, key);
-const { data }   = await credda.listWebhooks(key);
-await credda.deleteWebhook('wh-1', key);
-
-// Recent events across ALL your endpoints: sample data for an automation
-// platform's field picker. Falls back to catalog examples (`isExample: true`,
-// `source: 'examples'`) when nothing has been delivered yet.
-const recent = await credda.getRecentWebhookEvents(key, { limit: 25, eventType: 'score.updated' });
-```
-
-Every method returns a typed payload matching the API (`ScorePayload`,
-`UsagePayload`, `TrustExport`, `CreateWebhookResult`, …). Failed requests throw a
-`CreddaError` carrying the HTTP `status` and request `path`. Write methods need a
-key with the matching scope (`write` or e.g. `events:write` / `webhooks:write`).
-
-## ⚠️ Unmeasured is not zero
-
-The single most important rule when reading anything score-shaped. Credda
-distinguishes **"we measured it and it was bad"** from **"there was nothing to
-measure"**, and the API says which on the wire: an unmeasured rate is `null`,
-never `0`. A record with no history has not completed 0% of its commitments; it
-has not been measured, and rendering `0` turns an absence into a failing record.
-
-Every affected value travels with a **discriminator**. Branch on it:
-
-```ts
-const comps = await credda.getScoreComponents('user-123', key);
-
-// The whole-payload state first: is there anything to measure at all?
-if (comps.dataSufficiency?.insufficientData) {
-  render(comps.dataSufficiency.note);   // safe to show verbatim
-}
-
-for (const c of comps.components) {
-  if (!c.available) {
-    render(`${c.label}: not measured`);  // NEVER "0", and never "0%"
-    continue;
-  }
-  render(`${c.label}: ${c.score}`);
+for await (const event of credda.streamInvestigation(id, { since: 0, reconnect: true })) {
+  console.log(event.sequence, event.type, event.summary);
 }
 ```
 
-The discriminator for each surface:
+Three behaviours to build around:
 
-| Read | Branch on | Values it guards |
-|---|---|---|
-| `getScoreComponents` | `component.available`, `dataSufficiency.insufficientData` | `score` |
-| `getScoreExplain` | `factor.available`, `dataSufficiency.insufficientData` | `value`, `contribution` |
-| `getScoreExplain().reasonCodes` | `insufficientData`, `dataState` | `adverseActionReasons`, `supportingFactors`, `finalScore` |
-| `getTrustSummary` | `evidence.insufficientData` | `completionRate`, `onTimeRate` |
-| `getReliabilityReport` | `metrics.insufficientData`, `metrics.dataState` | `completionRate`, `onTimeRate`, `consistency`, `disputeRate` |
-| `projectScore` / `analyzeDocument` | `timeliness.projectionIsUpperBound` | `projected` (it is a best case, not a point estimate) |
+- **`debug` events never arrive on a stream.** The server withholds them and
+  offers no way to ask. They stay readable with
+  `listInvestigationEvents(id, { includeDebug: true })`.
+- **A stream carrying no event for five minutes is dropped.** That is not an
+  error. `reconnect: true` reopens from the last sequence seen (it defaults to
+  `true` in the hooks, `false` in the generator).
+- **A revoked key ends the stream mid-flight.** The server re-checks the
+  credential once a second and sends an `unauthenticated` frame before closing;
+  that surfaces as a `CreddaError` with status 401, and it does not reconnect.
 
-Three things follow, each with a test in `src/lib/unmeasuredIsNotZero.test.ts`:
+## Errors
 
-- **A measured zero is still real and must still be shown.** `available: true`
-  with `score: 0` is a record that genuinely completed nothing. Hiding real bad
-  news is a worse failure than the substitution this rule exists to prevent.
-- **An absent measurement is never an adverse reason.** When
-  `reasonCodes.insufficientData` is true, `adverseActionReasons` and
-  `supportingFactors` are **empty by construction**, and the one code present is
-  `informational`. Never draw a Regulation B statement of specific reasons from
-  it. `dataState` says whether the record has no outcomes at all
-  (`no_recorded_outcomes`) or outcomes whose score has not been computed yet
-  (`score_not_yet_computed`).
-- **An older API is safe.** These fields are additive and optional; against a
-  server that predates them they are simply `undefined`. Compare with
-  `!== false` so an absent flag reads as *unknown*, not as "unavailable".
-
-`score`, `value`, `completionRate` and friends are still declared non-nullable
-where they were: widening them is a breaking change for published `@credda/js`
-consumers and is held for a version decision. Each one's doc comment names the
-field that guards it, and the discriminators are what make correct code possible
-today.
-
-## Automatic retries (opt-in)
+Every non-2xx becomes a `CreddaError` carrying the API's own `code`, the HTTP
+`status`, the request `path`, and the `X-Request-Id` the server echoed — which
+is the one thing support asks for.
 
 ```ts
-const credda = new CreddaClient({ apiBase: 'https://api.credda.io', retries: 2 });
+import { CreddaError } from '@credda/js/headless';
+
+try {
+  await credda.getInvestigation(id);
+} catch (err) {
+  if (err instanceof CreddaError && err.code === 'NOT_FOUND') { /* … */ }
+}
 ```
 
-Retries transient failures only (network errors, 429, 502/503/504) with
-exponential backoff. Applied to GETs always, and to POSTs **only when the
-request carries an `Idempotency-Key`**: a non-idempotent write is never
-retried, so enabling this can't double-report an event. Off by default.
+Codes the API can send today: `INVALID_REQUEST`, `VALIDATION_FAILED`,
+`UNAUTHENTICATED`, `NOT_FOUND`, `NO_ORGANIZATION`, `PAYLOAD_TOO_LARGE`,
+`UNAVAILABLE`, `TOO_MANY_STREAMS`, `INTERNAL_ERROR`.
 
-## Recipes by use case
+Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
+re-attempts network errors and 502/504 on GETs with exponential backoff. `429`
+is not on that list because nothing in the API rate limits. `createInvestigation`
+is never retried whatever you set — the route defines no idempotency key, so a
+repeat would open a second investigation into the same report. `getHealth` is
+never retried either: a degraded database does not recover by being asked twice.
 
-Complete walkthroughs (problem → flow → working calls) live at
-[api.credda.io/use-cases](https://api.credda.io/use-cases), and the
-[quickstart](https://api.credda.io/quickstart) has copy-paste versions of each.
-The short version:
+## Status of the fix path
 
-```ts
-// Marketplace: read the trust record behind a page of listings (one call, ≤100 users)
-const { scores } = await credda.getScores(['seller_1', 'seller_2'], key);
+Credda's product is the fix: reproduce, diagnose, patch, prove, open a pull
+request. Two things a user will look for are not on this API **today**, and both
+are statuses with a date on them rather than positions:
 
-// Hiring: candidate hands you a token or an export file. Verify offline
-const verified = await verifyTrustExport(bundleTheyHandedYou); // throws if forged/revoked
+- **No pull-request route.** Nothing here returns a PR link or opens one.
+  Opening a pull request needs Contents write and Pull requests write, which
+  today's install does not ask for. The read-only permission set is a current
+  configuration, not a feature.
+- **`patches`, `verifications` and `resolution.fix` are typed, served, and
+  empty on runs made so far.** The API serializes them on every investigation
+  detail and every resolution record. They fill in when the engine runs the
+  patch path, which is gated on a model-backed provider being configured
+  (ADR 0018, condition 1). As of **August 2026**, no such run exists, so a
+  resolution's `fix` is `null` and the gap is named in
+  `confidence.notEstablished` rather than papered over.
 
-// Contractors: report the outcome (idempotent), then explain the move
-await credda.reportEvent({ userId, eventType: 'CONTRACT_FULFILLED', isVerified: true },
-  key, { idempotencyKey: `${orderRef}-fulfilled` });
-const delta = await credda.getScoreDelta(userId, key); // { scoreDelta, topDriver, ... }
+This package will not invent either one. When a route appears, a method appears.
 
-// Automation: react to trust changes without polling
-const event = await constructWebhookEvent({ secret, rawBody, signatureHeader, timestampHeader });
-```
+## Requirements
 
-## Counterparty confirmation (the strongest evidence there is)
-
-`reportEvent` lets you *assert* `isVerified: true`. A **confirmation request** is
-the strong form: you propose an outcome, deliver a one-time token to the named
-counterparty over **your own** channel, and the event is written (verified)
-only when that distinct party confirms.
-
-```ts
-// 1. You (keyed). Writes NO event and touches NO score.
-const req = await credda.createConfirmationRequest(
-  {
-    userId: 'worker_7',
-    eventType: 'CONTRACT_FULFILLED',
-    counterpartyRef: 'client_42',          // your key for them: must not name the subject
-    counterpartyName: 'Acme Ltd',
-    description: 'Kitchen refit, delivered 19 July',
-    returnUrl: 'https://acme.example/thanks',
-    expiresInDays: 14,
-  },
-  key,
-  { idempotencyKey: `job-991-confirm` },
-);
-// req.confirmationToken is shown ONCE. Send req.confirmUrl (Credda's hosted
-// page, zero frontend) or build your own UI on req.previewUrl/respondUrl.
-
-// 2. The counterparty: NO API KEY. They hold a token, not a Credda account.
-const counterparty = new CreddaClient();
-const { confirmation } = await counterparty.previewConfirmation(req.confirmation.id, token);
-const result = await counterparty.respondToConfirmation(req.confirmation.id, token, 'confirm');
-// result.eventId: the verified ledger event the confirmation earned.
-// 'decline' writes NOTHING: a decline is not evidence of a negative outcome.
-
-await credda.listConfirmations(key, { status: 'PENDING' });
-await credda.cancelConfirmation(req.confirmation.id, key);   // only while PENDING
-```
-
-## Reference requests (verify a résumé claim)
-
-The qualifications-half sibling of confirmations. A self-attested claim
-(employment / education / certification / skill) becomes **verified** when the
-named third party who was there confirms it via a one-time token. Same
-asymmetric auth: create/list/get/cancel are keyed; `previewReference` /
-`respondToReference` take **no API key**. A reference never moves the score.
-
-```ts
-// 1. You (keyed). Records NO qualification and touches NO score.
-const req = await credda.createReferenceRequest(
-  {
-    userId: 'worker_7',
-    category: 'employment',
-    label: 'Senior Engineer',
-    issuer: 'Acme Ltd',                    // display only, never scored or ranked
-    counterpartyRef: 'manager_42',         // your key for the reference: must not name the subject
-    counterpartyName: 'Dana Lee',
-    returnUrl: 'https://acme.example/thanks',
-    expiresInDays: 14,
-  },
-  key,
-  { idempotencyKey: `ref-991` },
-);
-// req.referenceToken is shown ONCE. Send req.referenceUrl (Credda's hosted page)
-// or build your own UI on req.previewUrl/respondUrl.
-
-// 2. The reference: NO API KEY. They hold a token, not a Credda account.
-const reference = new CreddaClient();
-const { reference: preview } = await reference.previewReference(req.reference.id, token);
-const result = await reference.respondToReference(req.reference.id, token, 'confirm');
-// result.eventId: the verified qualification event the reference earned.
-// 'decline' writes NOTHING: a decline is not evidence against the claim.
-
-await credda.listReferences(key, { status: 'PENDING' });
-await credda.cancelReference(req.reference.id, key);         // only while PENDING
-```
-
-## Threshold policies
-
-Declarative "tell me when a subject crosses this line": edge-triggered, delivered
-as `policy.threshold_crossed` through your webhooks. Notification config: a policy
-never reads into, blocks, or changes a score.
-
-```ts
-await credda.createPolicy(
-  { name: 'Watch the 60 line', userId: 'worker_7', metric: 'score', direction: 'down', threshold: 60 },
-  key,
-);
-await credda.createPolicy(
-  { name: 'Anyone entering At Risk', appliesToAll: true, metric: 'band', direction: 'enter', band: 'At Risk' },
-  key,
-);
-await credda.listPolicies(key);
-await credda.updatePolicy('pol_1', { threshold: 55 }, key);   // the metric is immutable
-await credda.deletePolicy('pol_1', key);
-```
-
-## Professional record + verified profile
-
-Two worker-owned surfaces over the same ledger. Both describe a record; **neither
-is a hiring verdict, a background check, or a consumer report**, and neither can
-move the Reliability Score.
-
-```ts
-// Reliability half: résumé-shaped summary of a VERIFIED work record.
-const record = await credda.getProfessionalRecord('worker_7', key);
-const cred   = await credda.mintProfessionalRecordCredential('worker_7', key);
-// cred.credentialVc verifies offline; cred.linkedin.addToProfileUrl opens
-// LinkedIn's certification form (LinkedIn does not import VC claims: its
-// "Show credential" link resolves to the public Credda proof).
-
-// Qualifications half: how much of a CLAIMED record is third-party verified.
-await credda.recordQualification(
-  'worker_7',
-  { category: 'certification', label: 'AWS Solutions Architect', issuer: 'AWS', verifiedBy: 'aws-training' },
-  key,
-);
-const profile = await credda.getVerifiedProfile('worker_7', key);
-// Omit `verifiedBy` and the claim is still recorded, as self-attested, with a
-// `verificationNote` saying why. It counts WHETHER a claim is verified, never
-// how prestigious it is: no school, employer or credential is ranked.
-
-// Optional `claimRef` gives a claim a stable identity so the SAME claim synced
-// twice (self-attested when the user enters it, verified when a reference
-// confirms it) resolves to ONE entry (verified wins) instead of two. Pass the
-// same `claimRef` to `createReferenceRequest`, and `{ claimRef, retract: true }`
-// withdraws a claim the subject deleted (append-only: nothing is erased).
-//
-// `{ claimRef, supersedes: true }` RETIRES an earlier confirmed instance, for a
-// license that lapsed or a credential that was downgraded, so it stops
-// resolving verified. It is not a delete and not a retraction: the earlier
-// event stays on the ledger and the record still reports `previouslyVerifiedAt`,
-// so "confirmed until this date" stays sayable. Re-syncing the same `claimRef`
-// on its own does NOT retire anything, because verified wins.
-
-// Public, no key: the token is the subject's own consent to present it.
-const shown = await new CreddaClient().getPublicProfessionalRecord('crd_share_…');
-
-// Public, no key: the closed set of Open Badges 3.0 achievements Credda signs.
-const badges = await new CreddaClient().getOpenBadgeAchievements();
-
-// Career export: the whole verified record as an open JSON Resume document
-// (jsonresume.org), so it drops into an ATS/HRIS without a bespoke integration.
-const resume = await credda.getCareerExport('worker_7', key);
-// Public, no key: behind a share token (the subject's own consent).
-const publicResume = await new CreddaClient().getPublicCareerExport('crd_share_…');
-
-// Public, no key: how to map real-world outcomes to Credda events, and WHO
-// confirms each. Guidance only; nothing here scores or ranks anyone.
-const templates = await new CreddaClient().getOutcomeTemplates('trades');
-```
-
-## Verify a credential offline
-
-`GET /api/v1/verify/:token` now returns a **Verifiable Trust Credential** (an
-EdDSA-signed JWT) alongside the payload. You can verify it **without trusting a
-live Credda call**: once the JWKS is cached, verification is fully local.
-
-```ts
-import { CreddaClient, verifyTrustCredential } from '@credda/js/headless';
-
-const credda = new CreddaClient();
-const trust = await credda.resolveToken('crd_share_…');
-
-// Method form (uses the client's apiBase for the JWKS):
-const v = await credda.verifyCredential(trust.credential!);
-
-// Or standalone:
-const v2 = await verifyTrustCredential(trust.credential!, { apiBase: 'https://api.credda.io' });
-
-console.log(v.cred.finalScore, v.cred.scoreBand); // attested, signature-checked
-```
-
-Verification uses Web Crypto (Ed25519), which works in Node 20+ and modern browsers.
-It throws if the signature, expiry, or issuer is invalid. See the scoring API's
-`docs/TRUST_CREDENTIALS.md` for the format and key rotation.
-
-## W3C Verifiable Credentials (Trust Fabric v3)
-
-Request a standards-compliant **W3C VC-JWT** and verify it offline. The issuer's
-`did:web` DID document is resolved automatically (JWKS fallback):
-
-```ts
-import { CreddaClient, verifyVerifiableCredential } from '@credda/js/headless';
-
-const credda = new CreddaClient();
-// GET /api/v1/verify/:token/credential?format=w3c returns { credentialVc, ... }
-const v = await credda.verifyVerifiableCredential(vcJwt);
-console.log(v.issuer);            // did:web:api.credda.io
-console.log(v.cred.scoreBand);    // attested, signature-checked
-
-// Or standalone with a preloaded DID document:
-await verifyVerifiableCredential(vcJwt, { didDocument });
-```
-
-`verifyVerifiableCredential` also enforces **revocation** (StatusList2021): if the
-credential carries a `credentialStatus`, it fetches + signature-verifies the status
-list and rejects a revoked credential. Check status directly with `isCredentialRevoked`,
-or skip the network with `{ checkRevocation: false }`.
-
-### The issuer is checked by default
-
-`did:web` resolution proves a credential was signed by whoever controls the DID's
-host. It does **not** prove that host is Credda. So the expected issuer defaults
-to the DID of the API base this client talks to (`did:web:api.credda.io` by
-default, or your own host if you set `apiBase`), and a credential from anyone
-else is rejected even though its signature is genuine.
-
-```ts
-// Rejected: signed by someone with a domain, not by Credda.
-await verifyVerifiableCredential(foreignVcJwt);
-// credda: issuer mismatch (expected did:web:api.credda.io, got did:web:elsewhere.example)
-
-// Federation: accept any issuer whose signature checks out, then decide yourself.
-const v = await verifyVerifiableCredential(foreignVcJwt, { issuer: null });
-if (!myTrustedIssuers.has(v.issuer)) throw new Error('untrusted issuer');
-```
-
-## Portable trust export
-
-Fetch a self-verifying bundle a user owns (current score + history + signed W3C
-credential + revocation pointer), then verify it end-to-end offline in one call,
-including a tamper check that the plaintext score matches the signed credential:
-
-```ts
-import { CreddaClient, verifyTrustExport } from '@credda/js/headless';
-
-const credda = new CreddaClient();
-const bundle = await credda.getTrustExport(shareToken);   // GET /verify/:token/export
-const { credential } = await verifyTrustExport(bundle);   // throws if invalid/revoked/tampered
-console.log(credential.cred.scoreBand);                   // trusted
-```
-
-## Receive webhooks
-
-Credda POSTs HMAC-signed trust events (`score.updated`, `score.band_changed`,
-`dispute.resolved`). Verify on the **raw** body, before parsing:
-
-```ts
-import { constructWebhookEvent } from '@credda/js/headless';
-
-// e.g. app.post('/credda', express.raw({ type: 'application/json' }), async (req, res) => {
-const event = await constructWebhookEvent({
-  secret: process.env.CREDDA_WEBHOOK_SECRET!,
-  rawBody: req.body.toString('utf8'),
-  signatureHeader: req.header('X-Credda-Signature'),
-  timestampHeader: req.header('X-Credda-Timestamp'),
-});
-// event is a discriminated union on `type`:
-if (event.type === 'dispute.resolved') event.data.disputeId; // typed
-else event.data.score;                                       // score events
-// res.sendStatus(200): throws (→ 400) on bad signature / stale timestamp / bad body.
-```
-
-`verifyWebhookSignature(...)` is the lower-level form returning `{ valid, reason }`.
-
-## Build
-
-```bash
-npm run build      # ES + CJS bundles + .d.ts
-npm run typecheck
-```
+Node 18+ (for `fetch` and `ReadableStream`), or any modern browser. React 18+ if
+you use the hooks. TypeScript types ship with the package.
 
 ## License
 
-MIT © Credda. See [LICENSE](LICENSE).
-
----
-
-Part of the Credda SDK family:
-[`@credda/js`](https://github.com/Credda-io/credda-js) ·
-[`credda-go`](https://github.com/Credda-io/credda-go) ·
-[`@credda/cli`](https://github.com/Credda-io/credda-cli) ·
-[`@credda/mcp-server`](https://github.com/Credda-io/credda-mcp)
+MIT. See [LICENSE](LICENSE).

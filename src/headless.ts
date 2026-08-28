@@ -1,225 +1,34 @@
 /**
- * Headless entry point: everything in `@credda/js` except the React provider
- * and hooks. Zero `react`/`react-dom` runtime dependency, so this is safe to
- * import from plain Node (CLIs, servers, the MCP server in `packages/mcp`)
- * without pulling React into the module graph. Same underlying `lib/*`
- * modules as the default `.` export, just without `components/`/`hooks/`.
+ * Headless entry point: the typed client and its types, with no React in the
+ * module graph. Import this from a CLI, a server, a worker or a Lambda.
+ *
+ * `@credda/js` (the root entry) is this plus the provider and hooks, and needs
+ * React installed.
  */
 
-// Offline credential verification (compact + W3C VC-JWT) + revocation
-export { verifyTrustCredential, verifyVerifiableCredential, isCredentialRevoked } from './lib/credential.js';
+export { CreddaClient } from './lib/client.js';
 export type {
-  VerifiedCredential,
-  TrustCredentialFacts,
-  VerifyOptions,
-  VerifiedVc,
-  VerifyVcOptions,
-  CredentialStatusEntry,
-} from './lib/credential.js';
-
-// Portable trust export verification
-export { verifyTrustExport } from './lib/trustExport.js';
-export type { VerifiedTrustExport } from './lib/trustExport.js';
-
-// Webhook verification (for platforms receiving Credda trust events)
-export { verifyWebhookSignature, constructWebhookEvent } from './lib/webhook.js';
-export type {
-  WebhookEvent, WebhookEventType, VerifyWebhookInput, WebhookVerification,
-  ScoreEventData, DisputeResolvedData, MonitorTriggeredData, UsageQuotaWarningData,
-  ScoreUpdatedEvent, ScoreBandChangedEvent, DisputeResolvedEvent, MonitorTriggeredEvent, UsageQuotaWarningEvent,
-} from './lib/webhook.js';
-
-// Web Bot Auth (RFC 9421) verification: the OPTIONAL second signature on a
-// delivery, for receivers that terminate their own edge instead of relying on a
-// WAF. Never a substitute for verifyWebhookSignature.
-export { verifyWebBotAuthSignature } from './lib/webBotAuth.js';
-export type {
-  VerifyWebBotAuthInput, WebBotAuthVerification, WebBotAuthDirectory, WebBotAuthJwk,
-} from './lib/webBotAuth.js';
-
-// Client (for headless / non-React usage)
-export { CreddaClient, CreddaError } from './lib/client.js';
-export type {
-  CreddaConfig,
-  Plan,
-  PlanFeature,
-  PlanCatalog,
-  BenchmarkCatalog,
-  BenchmarkStatistics,
-  BenchmarkCohort,
-  BenchmarkDistributionPayload,
-  UserBenchmarkPayload,
-  WebhookEventDoc,
-  WebhookEventCatalog,
-  CreddaErrorContext,
-  ErrorCodeDoc,
-  ErrorCatalog,
-  EnumValueDoc,
-  EnumDoc,
-  EnumCatalog,
-  ChangelogEntry,
-  DeprecationNotice,
-  ApiChangelog,
-  // Adverse-action reason codes. `insufficientData` / `dataState` /
-  // `informationalFactors` are what a caller branches on so an ABSENT
-  // measurement never becomes an adverse reason.
-  ReasonCodeDoc,
-  ReasonCodeCatalog,
-  ReasonCodeInstance,
-  ReasonCodeResult,
-  ReasonCodeDirection,
-  ReasonCodeDataState,
-  InformationalReasonCode,
-  TimelinessDisclosure,
-  TrustPayload,
-  TrustExport,
-  AgentDeclaration,
-  RegisterAgentInput,
-  AgentSubject,
-  AgentDetail,
-  DeliveryRecord,
-  DeliveryRecordDisclaimer,
-  DeliveryReceiptsPayload,
-  DidDocument,
-  RegistryIssuer,
-  TrustRegistry,
-  CredentialIssuerMetadata,
-  CredentialOfferResult,
-  ScorePayload,
-  ScoreBreakdown,
-  ScoreExplainPayload,
-  ScoreExplainFactor,
-  TrustSummaryPayload,
-  ScoreHistoryPayload,
-  ScoreDeltaPayload,
-  ScoreComponent,
-  ScoreComponentsPayload,
-  DataSufficiency,
-  EarningsQuery,
-  VerifiedEarnings,
-  EarningsSummary,
-  EarningsPeriod,
-  EarningsPlatformTotal,
-  EarningsWindow,
-  EarningsCredentialResult,
-  TimelinePayload,
-  TimelineItem,
-  FactorDelta,
-  ProjectionEventInput,
-  ProjectionEventType,
-  ScoreProjectionPayload,
-  BatchScoreEntry,
-  BatchScoresPayload,
-  PlatformsPayload,
-  ContributingPlatform,
-  RiskPayload,
-  UsagePayload,
-  UsageDay,
-  ReportEventInput,
-  ConfirmerType,
-  ReportEventResult,
-  IngestEventType,
-  ShareTokenResult,
-  DisputeOutcome,
-  DisputeResult,
-  CreateWebhookInput,
-  CreateWebhookResult,
-  UpdateWebhookInput,
-  WebhookConfig,
-  WebhookSubscriptionEvent,
-  WebhookTestResult,
-  WebhookDelivery,
-  RecentWebhookEvent,
-  RecentWebhookEventDelivery,
-  RecentWebhookEventsPayload,
-  ScoreMonitor,
-  CreateMonitorInput,
-  UpdateMonitorInput,
-  MonitorListPayload,
-  ScreeningStatus,
-  ScreeningJob,
-  ScreeningResultItem,
-  ScreeningListPayload,
-  ScreeningResultsPayload,
-  IngestTransform,
-  IngestFieldRule,
-  IngestMapping,
-  IngestInput,
-  IngestResultItem,
-  IngestPayload,
-  CreateMappingInput,
-  StoredMapping,
-  MappingListPayload,
-  CreateImportInput,
-  ImportStatus,
-  ImportJob,
-  ImportListPayload,
-  ImportRowError,
-  ImportRowWarning,
-  ImportErrorsPayload,
-  ConfirmationStatus,
-  ConfirmationDecision,
-  CreateConfirmationInput,
-  ConfirmationRequest,
-  ConfirmationCreateResult,
-  ConfirmationBatchResult,
-  ConfirmationListPayload,
-  ConfirmationPreview,
-  ConfirmationRespondResult,
-  ActivationRow,
-  CreateActivationCampaignInput,
-  ActivationCampaignResult,
-  ActivationFunnel,
-  ActivationCampaignFunnelPayload,
-  ReferenceRequestStatus,
-  ReferenceDecision,
-  ReferenceCategory,
-  CreateReferenceInput,
-  ReferenceRequest,
-  ReferenceCreateResult,
-  ReferenceListPayload,
-  ReferencePreview,
-  ReferenceRespondResult,
-  PolicyMetric,
-  PolicyDirection,
-  PolicyComponentKey,
-  PolicyConditionStatus,
-  PolicyConditionUnreachable,
-  ThresholdPolicy,
-  CreatePolicyInput,
-  UpdatePolicyInput,
-  ThresholdPolicyListPayload,
-  OpenBadgeAchievement,
-  OpenBadgeAchievementsPayload,
-  QualificationCategory,
-  QualificationBreakdown,
-  VerifiedProfilePayload,
-  RecordQualificationInput,
-  QualificationImportItemInput,
-  RecordQualificationResult,
-  ProvenanceTier,
-  RecordedProvenance,
-  QualificationImportItemResult,
-  QualificationImportResponse,
-  ProfessionalRecord,
-  ProfessionalRecordTenure,
-  ProfessionalRecordPayload,
-  PublicProfessionalRecordPayload,
-  ProfessionalRecordCredentialResult,
-  CareerExportDocument,
-  ReliabilityReport,
-  ReliabilityReportPayload,
-  PublicReliabilityReportPayload,
-  ReliabilityReportOutcome,
-  ReliabilityReportFactor,
-  OutcomeTemplatesCatalog,
-  SandboxSeedSubject,
-  SandboxSeedResult,
-  SandboxResetResult,
-  BookFilterQuery,
-  ListUsersQuery,
-  ListUsersPayload,
-  SubjectSummary,
-  BookSummaryPayload,
-  BookSummaryBand,
+  CreateInvestigationInput,
+  ListEventsQuery,
+  ListEvidenceQuery,
+  ListInvestigationsQuery,
+  ListLearningsQuery,
+  ListResolutionsQuery,
+  ListValidationsQuery,
+  PageQuery,
 } from './lib/client.js';
+
+export { Transport, queryString } from './lib/http.js';
+export type { CreddaConfig, QueryValue, RequestOptions } from './lib/http.js';
+
+export { CreddaError, isRetryableStatus } from './lib/errors.js';
+export type { CreddaErrorCode, CreddaErrorContext } from './lib/errors.js';
+
+/**
+ * The SSE reader. Exported because a caller outside React streams a run the
+ * same way the hooks do, and because `SseDecoder` is worth having on its own.
+ */
+export { SseDecoder, streamSse } from './lib/stream.js';
+export type { SseFrame, StreamOptions } from './lib/stream.js';
+
+export type * from './lib/types.js';
