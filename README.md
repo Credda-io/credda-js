@@ -29,11 +29,19 @@ proves it with a test that fails before and passes after, and opens a pull
 request. It proposes and never merges.
 
 This package is the typed TypeScript client and React hooks for the engine's
-HTTP API — one method per route, and no method without one.
+HTTP API — one method per route, and no method without one. The routes it wraps
+are documented at [api.credda.io/reference](https://api.credda.io/reference).
 
 ```bash
 npm install @credda/js
 ```
+
+> **This installs 0.8.0 today — checked 2026-08-28.** The latest `@credda/js` on
+> npm is still **0.8.0**, the retired reliability-score client described in the
+> warning above. `1.0.0` — the version this repository contains and this README
+> documents — is **not published yet**. A bare `npm install @credda/js` therefore
+> gets you the wrong package. Until 1.0.0 ships, read this README as
+> documentation of the source in this repository rather than of what npm serves.
 
 ## Two entry points
 
