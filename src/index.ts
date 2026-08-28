@@ -1,224 +1,40 @@
-// Provider + context
-export { CreddaProvider } from './components/CreddaProvider.js';
+/**
+ * `@credda/js` — the typed client and React hooks for the Credda engine API.
+ *
+ * Credda finds defects and vulnerabilities in a company's production and QA
+ * environments, reproduces them, diagnoses the cause, and — see the README's
+ * status table for what the API serves today — is built to open a pull request
+ * with the fix. This package reads that engine.
+ *
+ * Everything in `@credda/js/headless` is re-exported here, plus the provider
+ * and hooks, which need React.
+ */
+
+export * from './headless.js';
+
+export { CreddaProvider, useCreddaClient } from './components/CreddaProvider.js';
 export type { CreddaProviderProps } from './components/CreddaProvider.js';
 
-// Hooks
-export { useTrustToken } from './hooks/useTrustToken.js';
-export type { UseTrustTokenResult } from './hooks/useTrustToken.js';
+export { useInvestigations } from './hooks/useInvestigations.js';
+export type { UseInvestigationsResult } from './hooks/useInvestigations.js';
 
-export { useScore } from './hooks/useScore.js';
-export type { UseScoreResult } from './hooks/useScore.js';
+export { useInvestigation } from './hooks/useInvestigation.js';
+export type { UseInvestigationResult } from './hooks/useInvestigation.js';
 
-// Offline credential verification (compact + W3C VC-JWT) + revocation
-export { verifyTrustCredential, verifyVerifiableCredential, isCredentialRevoked } from './lib/credential.js';
+export { useInvestigationEvents } from './hooks/useInvestigationEvents.js';
 export type {
-  VerifiedCredential,
-  TrustCredentialFacts,
-  VerifyOptions,
-  VerifiedVc,
-  VerifyVcOptions,
-  CredentialStatusEntry,
-} from './lib/credential.js';
+  UseInvestigationEventsOptions,
+  UseInvestigationEventsResult,
+} from './hooks/useInvestigationEvents.js';
 
-// Portable trust export verification
-export { verifyTrustExport } from './lib/trustExport.js';
-export type { VerifiedTrustExport } from './lib/trustExport.js';
+export { useResolution } from './hooks/useResolution.js';
+export type { UseResolutionResult } from './hooks/useResolution.js';
 
-// Webhook verification (for platforms receiving Credda trust events)
-export { verifyWebhookSignature, constructWebhookEvent } from './lib/webhook.js';
+export { useValidation } from './hooks/useValidation.js';
+export type { UseValidationResult } from './hooks/useValidation.js';
+
+export { useValidationEvents } from './hooks/useValidationEvents.js';
 export type {
-  WebhookEvent, WebhookEventType, VerifyWebhookInput, WebhookVerification,
-  ScoreEventData, DisputeResolvedData, MonitorTriggeredData, UsageQuotaWarningData,
-  ScoreUpdatedEvent, ScoreBandChangedEvent, DisputeResolvedEvent, MonitorTriggeredEvent, UsageQuotaWarningEvent,
-} from './lib/webhook.js';
-
-// Web Bot Auth (RFC 9421) verification: the OPTIONAL second signature on a
-// delivery, for receivers that terminate their own edge instead of relying on a
-// WAF. Never a substitute for verifyWebhookSignature.
-export { verifyWebBotAuthSignature } from './lib/webBotAuth.js';
-export type {
-  VerifyWebBotAuthInput, WebBotAuthVerification, WebBotAuthDirectory, WebBotAuthJwk,
-} from './lib/webBotAuth.js';
-
-// Client (for headless / non-React usage)
-export { CreddaClient, CreddaError } from './lib/client.js';
-export type {
-  CreddaConfig,
-  Plan,
-  PlanFeature,
-  PlanCatalog,
-  BenchmarkCatalog,
-  BenchmarkStatistics,
-  BenchmarkCohort,
-  BenchmarkDistributionPayload,
-  UserBenchmarkPayload,
-  WebhookEventDoc,
-  WebhookEventCatalog,
-  CreddaErrorContext,
-  ErrorCodeDoc,
-  ErrorCatalog,
-  EnumValueDoc,
-  EnumDoc,
-  EnumCatalog,
-  ChangelogEntry,
-  DeprecationNotice,
-  ApiChangelog,
-  ReasonCodeDoc,
-  ReasonCodeCatalog,
-  ReasonCodeInstance,
-  ReasonCodeResult,
-  ReasonCodeDirection,
-  ReasonCodeDataState,
-  InformationalReasonCode,
-  TimelinessDisclosure,
-  TrustPayload,
-  TrustExport,
-  AgentDeclaration,
-  RegisterAgentInput,
-  AgentSubject,
-  AgentDetail,
-  DeliveryRecord,
-  DeliveryRecordDisclaimer,
-  DeliveryReceiptsPayload,
-  DidDocument,
-  RegistryIssuer,
-  TrustRegistry,
-  CredentialIssuerMetadata,
-  CredentialOfferResult,
-  ScorePayload,
-  ScoreBreakdown,
-  ScoreExplainPayload,
-  ScoreExplainFactor,
-  ScoreHistoryPayload,
-  ScoreDeltaPayload,
-  ScoreComponent,
-  ScoreComponentsPayload,
-  DataSufficiency,
-  EarningsQuery,
-  VerifiedEarnings,
-  EarningsSummary,
-  EarningsPeriod,
-  EarningsPlatformTotal,
-  EarningsWindow,
-  EarningsCredentialResult,
-  TimelinePayload,
-  TimelineItem,
-  FactorDelta,
-  ProjectionEventInput,
-  ProjectionEventType,
-  ScoreProjectionPayload,
-  BatchScoreEntry,
-  BatchScoresPayload,
-  PlatformsPayload,
-  ContributingPlatform,
-  RiskPayload,
-  UsagePayload,
-  UsageDay,
-  ReportEventInput,
-  ConfirmerType,
-  ReportEventResult,
-  IngestEventType,
-  ShareTokenResult,
-  DisputeOutcome,
-  DisputeResult,
-  CreateWebhookInput,
-  CreateWebhookResult,
-  UpdateWebhookInput,
-  WebhookConfig,
-  WebhookSubscriptionEvent,
-  WebhookTestResult,
-  WebhookDelivery,
-  RecentWebhookEvent,
-  RecentWebhookEventDelivery,
-  RecentWebhookEventsPayload,
-  ScoreMonitor,
-  CreateMonitorInput,
-  UpdateMonitorInput,
-  MonitorListPayload,
-  ScreeningStatus,
-  ScreeningJob,
-  ScreeningResultItem,
-  ScreeningListPayload,
-  ScreeningResultsPayload,
-  IngestTransform,
-  IngestFieldRule,
-  IngestMapping,
-  IngestInput,
-  IngestResultItem,
-  IngestPayload,
-  CreateMappingInput,
-  StoredMapping,
-  MappingListPayload,
-  CreateImportInput,
-  ImportStatus,
-  ImportJob,
-  ImportListPayload,
-  ImportRowError,
-  ImportRowWarning,
-  ImportErrorsPayload,
-  ConfirmationStatus,
-  ConfirmationDecision,
-  CreateConfirmationInput,
-  ConfirmationRequest,
-  ConfirmationCreateResult,
-  ConfirmationBatchResult,
-  ConfirmationListPayload,
-  ConfirmationPreview,
-  ConfirmationRespondResult,
-  ActivationRow,
-  CreateActivationCampaignInput,
-  ActivationCampaignResult,
-  ActivationFunnel,
-  ActivationCampaignFunnelPayload,
-  ReferenceRequestStatus,
-  ReferenceDecision,
-  ReferenceCategory,
-  CreateReferenceInput,
-  ReferenceRequest,
-  ReferenceCreateResult,
-  ReferenceListPayload,
-  ReferencePreview,
-  ReferenceRespondResult,
-  PolicyMetric,
-  PolicyDirection,
-  PolicyComponentKey,
-  PolicyConditionStatus,
-  PolicyConditionUnreachable,
-  ThresholdPolicy,
-  CreatePolicyInput,
-  UpdatePolicyInput,
-  ThresholdPolicyListPayload,
-  OpenBadgeAchievement,
-  OpenBadgeAchievementsPayload,
-  QualificationCategory,
-  QualificationBreakdown,
-  VerifiedProfilePayload,
-  RecordQualificationInput,
-  QualificationImportItemInput,
-  RecordQualificationResult,
-  ProvenanceTier,
-  RecordedProvenance,
-  QualificationImportItemResult,
-  QualificationImportResponse,
-  ProfessionalRecord,
-  ProfessionalRecordTenure,
-  ProfessionalRecordPayload,
-  PublicProfessionalRecordPayload,
-  ProfessionalRecordCredentialResult,
-  ReliabilityReport,
-  ReliabilityReportPayload,
-  PublicReliabilityReportPayload,
-  ReliabilityReportOutcome,
-  ReliabilityReportFactor,
-  CareerExportDocument,
-  OutcomeTemplatesCatalog,
-  SandboxSeedSubject,
-  SandboxSeedResult,
-  SandboxResetResult,
-  BookFilterQuery,
-  ListUsersQuery,
-  ListUsersPayload,
-  SubjectSummary,
-  BookSummaryPayload,
-  BookSummaryBand,
-} from './lib/client.js';
+  UseValidationEventsOptions,
+  UseValidationEventsResult,
+} from './hooks/useValidationEvents.js';
