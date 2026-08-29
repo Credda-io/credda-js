@@ -264,6 +264,16 @@ export type LearningKind =
 /** `toInvestigationSummary`. A list row. */
 export interface InvestigationSummary {
   id: string;
+  repositoryId: string;
+  /**
+   * Null only when the repository row is gone; never a stand-in label. Passed
+   * through `toWireSource`, so a local checkout never puts a host path here.
+   *
+   * On the queue row for the reason it is on {@link ValidationSummary}: without
+   * it, "which repository is this" costs one detail request per row, on exactly
+   * the screen that renders every row at once.
+   */
+  repositorySource: string | null;
   issueRef: string | null;
   issueTitle: string;
   state: InvestigationState;
@@ -286,6 +296,12 @@ export interface Investigation {
   issueRef: string | null;
   issueTitle: string;
   issueBody: string;
+  /**
+   * The signal this run was opened from, when it came from one. Null for a
+   * report handed to Credda directly. It is the id the reporting side knows
+   * this defect by, and it is what `listResolutions({ signalId })` looks up.
+   */
+  signalId: string | null;
   state: InvestigationState;
   outcome: InvestigationOutcome | null;
   providerId: string | null;
@@ -368,6 +384,15 @@ export interface FailureSignature {
 export interface Evidence {
   id: string;
   investigationId: string;
+  /**
+   * Set when this row was produced by a validation check rather than by the
+   * investigation directly. A check runs inside an investigation (ADR 0010), so
+   * this list mixes both, and without these two fields a client reading an
+   * investigation's evidence cannot tell which is which. Both null means the
+   * investigation itself recorded the observation.
+   */
+  validationId: string | null;
+  checkId: string | null;
   type: EvidenceType;
   phase: EvidencePhase;
   strength: EvidenceStrength;
@@ -689,6 +714,21 @@ export interface ResolutionSummary {
 }
 
 /**
+ * `packages/shared/src/resolution.ts` — `ResolutionDeclinedReproduction`. One
+ * refusal the reproduction-plan extractor raised while reading the report: a
+ * snippet Credda found and could not honestly turn into a command.
+ *
+ * `source` says where in the report the refusal was raised, which is the one
+ * thing `reason` does not carry. None of the three is a vocabulary: they are
+ * free text written by the engine and by the reporter.
+ */
+export interface DeclinedReproduction {
+  source: string;
+  reason: string;
+  excerpt: string;
+}
+
+/**
  * `toResolution`. The whole record.
  *
  * `rootCause`, `fix` and `verification` are null exactly when the run produced
@@ -738,6 +778,20 @@ export interface Resolution {
     before: string | null;
     after: string | null;
   };
+  /**
+   * Why Credda could not turn parts of the report into a command.
+   *
+   * Null and empty are different answers, and collapsing them reports "Credda
+   * declined no part of this report" about a record that was never asked: null
+   * means the record predates the column and says nothing either way, empty
+   * means the extractor refused nothing.
+   *
+   * A refusal is a fact about Credda's reach. Nothing here may be rendered as a
+   * claim about whether the reported defect exists. `excerpt` is the reporter's
+   * own text, quoted and never interpolated — a client that renders it must
+   * escape it.
+   */
+  declinedReproductions: DeclinedReproduction[] | null;
   confidence: {
     class: ResolutionConfidenceClass;
     /** Empty exactly when the class is `ESTABLISHED`. */
