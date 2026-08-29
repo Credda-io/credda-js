@@ -39,6 +39,29 @@ describe('investigations', () => {
     );
   });
 
+  /*
+   * `repository` and `outcome` are filters the route has always accepted and
+   * this method could not express. An `outcome` passed anyway fell into the
+   * rest element and was handed to `fetch` as a request option, so the caller
+   * got an unfiltered page and no error at all.
+   */
+  it('passes the repository and outcome filters the route accepts', async () => {
+    const fetchImpl = stub({ investigations: [], total: 0 });
+    await clientWith(fetchImpl).listInvestigations({
+      repository: 'repo_1',
+      outcome: 'REPRODUCED_AND_DIAGNOSED',
+    });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://engine.example.com/api/investigations?repository=repo_1&outcome=REPRODUCED_AND_DIAGNOSED',
+    );
+  });
+
+  it('can filter the queue by a terminal outcome the fix stage produces', async () => {
+    const fetchImpl = stub({ investigations: [], total: 0 });
+    await clientWith(fetchImpl).listInvestigations({ outcome: 'VERIFIED' });
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations?outcome=VERIFIED');
+  });
+
   it('returns the list page whole, so `total` is not mistaken for the page length', async () => {
     const page = { investigations: [{ id: 'inv_1' }], total: 91 };
     const result = await clientWith(stub(page)).listInvestigations({ limit: 1 });

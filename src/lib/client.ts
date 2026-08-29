@@ -28,6 +28,7 @@ import type {
   InvestigationEvent,
   InvestigationEventPage,
   InvestigationListPage,
+  InvestigationOutcome,
   InvestigationState,
   LatestResolution,
   LearningKind,
@@ -56,7 +57,16 @@ export interface PageQuery extends RequestOptions {
 }
 
 export interface ListInvestigationsQuery extends PageQuery {
+  /** A repository id. An unknown one is a 404, never an empty page. */
+  repository?: string | undefined;
   state?: InvestigationState | undefined;
+  /**
+   * A terminal outcome. One token, never a list: `listQuery` in
+   * `apps/api/src/routes/investigations.ts` is a single `z.enum` against an
+   * `= ?` predicate, and a run that has not reached a terminal outcome has NULL
+   * and so matches no value at all. Ask `state` for what is still in flight.
+   */
+  outcome?: InvestigationOutcome | undefined;
 }
 
 export interface ListEventsQuery extends RequestOptions {
@@ -117,9 +127,24 @@ export class CreddaClient {
 
   // ── Investigations ─────────────────────────────────────────────────────────
 
+  /**
+   * The investigation queue.
+   *
+   * `repository` and `outcome` were absent from this method's query until
+   * 2026-08-29 while the route accepted both, so the two filters a caller most
+   * wants on a queue -- whose repository, and how did it end -- could not be
+   * expressed at all. They were also unrecoverable by accident: an `outcome`
+   * key passed anyway fell into the rest element below and was handed to
+   * `fetch` as a request option, where it was ignored in silence rather than
+   * refused. The sibling queues (`listValidations`, `listResolutions`) carried
+   * their full sets throughout; this one did not.
+   */
   listInvestigations(query: ListInvestigationsQuery = {}): Promise<InvestigationListPage> {
-    const { state, limit, offset, ...options } = query;
-    return this.transport.get(`/api/investigations${queryString({ state, limit, offset })}`, options);
+    const { repository, state, outcome, limit, offset, ...options } = query;
+    return this.transport.get(
+      `/api/investigations${queryString({ repository, state, outcome, limit, offset })}`,
+      options,
+    );
   }
 
   /**

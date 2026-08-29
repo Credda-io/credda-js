@@ -25,9 +25,13 @@
 
 You label a bug report or a security vulnerability; Credda reproduces the
 failure, diagnoses the cause, writes the patch, proves it with a test that fails
-before and passes after, and hands back a diff. Opening a pull request is an
-opt-in delivery step, off by default, that has not yet run against a real
-repository. It proposes and never merges.
+before and passes after, and hands back a diff. Whether that diff becomes a
+pull request depends on which mechanism delivered it, and the two answer
+differently: the **GitHub App** path opens one with no flag and no switch, for a
+run that reaches `READY_FOR_REVIEW` with a proven verdict; the **GitHub Action**
+opens none unless you set its `open-pull-request` input, which defaults to
+`false`. How often a run reaches a proven fix at all has not been measured. It
+proposes and never merges.
 
 This package is the typed TypeScript client and React hooks for the engine's
 HTTP API — one method per route, and no method without one. The routes it wraps
@@ -97,7 +101,7 @@ accepts is opening an investigation.
 
 | Method | Route |
 | --- | --- |
-| `listInvestigations({ state, limit, offset })` | `GET /api/investigations` |
+| `listInvestigations({ repository, state, outcome, limit, offset })` | `GET /api/investigations` |
 | `createInvestigation({ repositoryId, issueTitle, issueBody, issueRef? })` | `POST /api/investigations` |
 | `getInvestigation(id)` | `GET /api/investigations/:id` |
 | `listInvestigationEvents(id, { since, limit, includeDebug })` | `GET /api/investigations/:id/events` |
@@ -281,10 +285,18 @@ and it is a status with a date on it rather than a position:
 - **No pull-request route, as of 2026-08-28.** Nothing here returns a PR link or
   opens one. The engine can open a pull request -- its GitHub App asks an
   operator for Contents write and Pull requests write, and its delivery path
-  uses them for a run that reaches a proven verdict -- but that delivery is
-  opt-in, off unless a caller turns it on, has not yet run against a real
-  repository, and is not surfaced as a route here. When a route appears, a
-  method appears; this package will not invent one in the meantime.
+  uses them for a run that reaches a proven verdict -- but that delivery is not
+  surfaced as a route here. When a route appears, a method appears; this package
+  will not invent one in the meantime.
+
+  That delivery is **not** opt-in, and this bullet said it was until 2026-08-29.
+  `apps/worker/src/handlers/change-proposal-delivery.ts` states in as many words
+  that there is no opt-in switch and no flag: the gate is the state and the
+  verdict, widened or narrowed only by a code review. The `open-pull-request`
+  input that defaults to `false` belongs to the **GitHub Action**, which is a
+  different mechanism -- it runs on the caller's own runner and calls
+  `gh pr create` -- and describing the two in one sentence is wrong about one of
+  them.
 - **`patches`, `verifications` and `resolution.fix` are typed and served, and
   are `null` or empty on a run that did not enter the patch stage.** The API
   serializes them on every investigation detail and every resolution record.
@@ -295,8 +307,9 @@ and it is a status with a date on it rather than a position:
   run happened on 2026-08-27, ADR 0019 put the Fixer and the Verifier back on
   the investigation path the same day, and the following day the engine's
   delivery path was wired to open a pull request for a run that reaches a proven
-  verdict -- as an opt-in step, off by default, not yet exercised against a real
-  repository.
+  verdict. That path has no flag; see the bullet above for which mechanism the
+  off-by-default input actually belongs to. How often a run reaches a proven fix
+  at all has not been measured, and no count is claimed here.
 
   What did **not** change is the rule that made the old sentence worth writing:
   a stage that did not run is never reported as a measured zero. Against the
