@@ -1,0 +1,300 @@
+{
+  "generator": "scripts/generate-route-surface.ts",
+  "generatedAt": "2026-08-29T23:51:41.548Z",
+  "coreCommit": "620ea75030c30d41cce7d69c7d4e4b10ee3b0591",
+  "digest": "sha256-cc61f06334eb88f0a6a9475c8fb381c8ad2b454e4cfa1ab42dfa774a29dbb108",
+  "routeCount": 27,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/livez",
+      "statuses": [
+        204
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/openapi.json",
+      "statuses": [
+        200
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/health",
+      "statuses": [
+        200,
+        401,
+        404,
+        500,
+        503
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/investigations",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/investigations",
+      "statuses": [
+        200,
+        201,
+        400,
+        401,
+        404,
+        409,
+        413,
+        500
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/api/investigations/{id}/cancel",
+      "statuses": [
+        200,
+        202,
+        400,
+        401,
+        404,
+        409,
+        413,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/investigations/{id}",
+      "statuses": [
+        200,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/investigations/{id}/events",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/investigations/{id}/evidence",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/investigations/{id}/stream",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500,
+        503
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/metrics",
+      "statuses": [
+        200,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/organization",
+      "statuses": [
+        200,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/organization/members",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/organization/keys",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/repositories",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/repositories/{id}",
+      "statuses": [
+        200,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/repositories/{id}/learnings",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/resolutions",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/resolutions/latest",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/resolutions/{id}",
+      "statuses": [
+        200,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations/{id}",
+      "statuses": [
+        200,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations/{id}/checks",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations/{id}/findings",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations/{id}/evidence",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations/{id}/events",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/api/validations/{id}/stream",
+      "statuses": [
+        200,
+        400,
+        401,
+        404,
+        500,
+        503
+      ]
+    }
+  ]
+}
