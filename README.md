@@ -92,8 +92,13 @@ body and nothing else.
 ## What the API serves
 
 Every method below maps to one route in the engine. Almost all of it is read:
-the engine is driven by the worker and the CLI, and the only write this API
-accepts is opening an investigation.
+the engine is driven by the worker and the CLI, and the API accepts exactly two
+writes — opening an investigation and cancelling one.
+
+Every query parameter and body field these methods send is one the engine's
+schemas declare, and that is now load-bearing: those schemas reject an
+undeclared key with a `400 VALIDATION_FAILED` naming it, where an unknown one
+used to be accepted and ignored.
 
 ### Investigations — a reported failure being chased down
 
@@ -101,6 +106,7 @@ accepts is opening an investigation.
 | --- | --- |
 | `listInvestigations({ repository, signalId, state, outcome, limit, offset })` | `GET /api/investigations` |
 | `createInvestigation({ repositoryId, issueTitle, issueBody, issueRef? })` | `POST /api/investigations` |
+| `cancelInvestigation(id, { reason? })` | `POST /api/investigations/:id/cancel` |
 | `getInvestigation(id)` | `GET /api/investigations/:id` |
 | `listInvestigationEvents(id, { since, limit, includeDebug })` | `GET /api/investigations/:id/events` |
 | `listInvestigationEvidence(id, { type, limit, offset })` | `GET /api/investigations/:id/evidence` |
@@ -109,6 +115,34 @@ accepts is opening an investigation.
 `createInvestigation` creates the row in state `CREATED` and returns. **It does
 not start the run** — the API does not execute anything; the worker does. What
 you watch it with is the event stream.
+
+`cancelInvestigation` answers with what it **achieved**, and the two successful
+answers do not mean the same thing. Narrow on `status` before you show anything
+to an operator:
+
+| `status` | HTTP | What is true |
+| --- | --- | --- |
+| `CANCELLED` | 200 | The job was still queued and was refused its claim. **Nothing is running.** `state` is `CANCELLED`. |
+| `ALREADY_CANCELLED` | 200 | It was already cancelled. Repeating the call is not an error. |
+| `CANCELLATION_REQUESTED` | 202 | A worker is **inside** the run, holding a sandbox and possibly a model call. The request is durable and that worker honours it on its next heartbeat — but the run **has not stopped**, and the API writes no terminal state here. The run writes its own when it lets go; the event stream is how you learn that it did. |
+
+```ts
+const result = await credda.cancelInvestigation(id, { reason: 'wrong repository' });
+if (result.status === 'CANCELLATION_REQUESTED') {
+  // Still running. Watch for the terminal state the run writes itself.
+} else {
+  // result.state is 'CANCELLED'.
+}
+```
+
+The return type is a union, not a record with a boolean, so the 202 cannot be
+read as the 200 by accident: on the `CANCELLATION_REQUESTED` branch `state` is
+typed to exclude `'CANCELLED'`.
+
+Two refusals throw a `CreddaError`, both `409`. `ALREADY_FINISHED`: the run
+reached a terminal state, so there is nothing to stop and nothing to undo.
+`NOT_CANCELLABLE`: the run is executing outside the job queue — which is what
+`credda run` does — so this API cannot reach it, and will not pretend it did.
 
 ### Validations — a change being checked before it lands
 
@@ -271,14 +305,22 @@ try {
 ```
 
 Codes the API can send today: `INVALID_REQUEST`, `VALIDATION_FAILED`,
-`UNAUTHENTICATED`, `NOT_FOUND`, `NO_ORGANIZATION`, `PAYLOAD_TOO_LARGE`,
-`UNAVAILABLE`, `TOO_MANY_STREAMS`, `INTERNAL_ERROR`.
+`UNAUTHENTICATED`, `NOT_FOUND`, `NO_ORGANIZATION`, `ALREADY_FINISHED`,
+`NOT_CANCELLABLE`, `PAYLOAD_TOO_LARGE`, `TOO_MANY_STREAMS`, `INTERNAL_ERROR`.
+`ALREADY_FINISHED` and `NOT_CANCELLABLE` are the cancel route's, and appear
+nowhere else. The type union also carries `UNAVAILABLE`, which no response can
+actually carry — it is a default every call site overrides — and it is listed in
+the type only so that removing an exported member does not break a build.
 
 Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
 re-attempts network errors and 502/504 on GETs with exponential backoff. `429`
-is not on that list because nothing in the API rate limits. `createInvestigation`
-is never retried whatever you set — the route defines no idempotency key, so a
-repeat would open a second investigation into the same report. `getHealth` is
+is not on that list because nothing in the API rate limits. Neither write is
+ever retried whatever you set. `createInvestigation` defines no idempotency key,
+so a repeat would open a second investigation into the same report;
+`cancelInvestigation` is idempotent at the server, but a repeat that crosses a
+worker's heartbeat answers a different status than the attempt it replaced, and
+a retry that swallowed that would hand back "cancelled" for a call that was told
+"requested". `getHealth` is
 never retried either: a degraded database does not recover by being asked twice.
 
 ## Status of the fix path

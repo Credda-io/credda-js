@@ -24,9 +24,13 @@ export interface CreddaConfig {
    * is the number of RE-attempts; 0 is the default. Backoff is
    * `retryBaseMs * 2^n`, capped by `maxRetryDelayMs`.
    *
-   * GETs only. `createInvestigation` is a POST that creates a row and carries no
-   * idempotency key — the API defines none — so it is never retried: a repeat
-   * would open a second investigation into the same report.
+   * GETs only, which is to say neither of the API's two writes.
+   * `createInvestigation` creates a row and carries no idempotency key — the
+   * API defines none — so a repeat would open a second investigation into the
+   * same report. `cancelInvestigation` IS idempotent at the server, but a
+   * repeat that crosses a worker's heartbeat answers a different status than
+   * the attempt it replaced, and a retry policy that swallowed that would hand
+   * back "cancelled" for a call that was told "requested".
    */
   retries?: number | undefined;
   retryBaseMs?: number | undefined;

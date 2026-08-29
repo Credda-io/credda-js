@@ -3,9 +3,15 @@
  *
  * One method per route in `apps/api/src/routes/`, and no method that is not one.
  * The surface is almost entirely read: the engine is driven by the worker and
- * the CLI, and the only write this API accepts is opening an investigation
- * (`POST /api/investigations`), which is a row in `CREATED` — the run itself
- * starts elsewhere.
+ * the CLI, and the API accepts exactly two writes. `POST /api/investigations`
+ * opens one, which is a row in `CREATED` — the run itself starts elsewhere. And
+ * `POST /api/investigations/{id}/cancel` stops one, and says whether it
+ * actually stopped it or only asked; see {@link CreddaClient.cancelInvestigation}.
+ *
+ * Every query and body this client sends names only keys the engine's schemas
+ * declare. That is now load-bearing rather than tidy: those schemas are
+ * `.strict()`, so an undeclared key is a 400 `VALIDATION_FAILED` naming it,
+ * where it was once accepted and ignored.
  *
  * Authentication is one bearer key on every `/api` route
  * (`apps/api/src/auth.ts`). The key identifies an ORGANISATION, not a person,
@@ -20,6 +26,7 @@ import { streamSse } from './stream.js';
 import type { StreamOptions } from './stream.js';
 import type {
   ApiKeyPage,
+  Cancellation,
   EvidencePage,
   EvidenceType,
   FindingPage,
@@ -143,6 +150,16 @@ export interface CreateInvestigationInput {
   issueRef?: string | undefined;
 }
 
+/** The body of `POST /api/investigations/{id}/cancel`. */
+export interface CancelInvestigationInput extends RequestOptions {
+  /**
+   * Recorded against the run, not required: `cancelBody` makes it optional
+   * because a cancel with nothing said is still a cancel. 1–500 characters when
+   * given; an empty string is a 400.
+   */
+  reason?: string | undefined;
+}
+
 export class CreddaClient {
   private readonly transport: Transport;
 
@@ -187,6 +204,46 @@ export class CreddaClient {
     options: RequestOptions = {},
   ): Promise<InvestigationDetail> {
     return this.transport.post('/api/investigations', input, options);
+  }
+
+  /**
+   * Stops a run — or records that it has been asked to stop, and says which.
+   *
+   * The one call on this client where the return value must be narrowed before
+   * anything is shown to a person. A cancel that reports success over a
+   * container still cloning a repository, still running a test suite and still
+   * spending a model budget has told an operator something false about their
+   * own machine and their own bill, so this returns the route's own
+   * distinction rather than a boolean:
+   *
+   * ```ts
+   * const result = await credda.cancelInvestigation(id, { reason: 'wrong repo' });
+   * if (result.status === 'CANCELLATION_REQUESTED') {
+   *   // A worker is still inside the run. It stops on its next heartbeat and
+   *   // writes its own terminal state; watch the stream for it.
+   *   for await (const event of credda.streamInvestigation(id)) { ... }
+   * } else {
+   *   // result.state is 'CANCELLED'. Nothing is running.
+   * }
+   * ```
+   *
+   * Throws a {@link CreddaError} for the two refusals, both 409: code
+   * `ALREADY_FINISHED` when the run reached a terminal state — there is nothing
+   * to stop and nothing to undo — and `NOT_CANCELLABLE` when it is executing
+   * outside the job queue, which is what `credda run` does. The API cannot
+   * reach that process and will not pretend it did.
+   *
+   * Repeating the call is safe: an already-cancelled run answers 200
+   * `ALREADY_CANCELLED` rather than an error. It is still not retried
+   * automatically, because {@link Transport.post} retries nothing.
+   */
+  cancelInvestigation(id: string, input: CancelInvestigationInput = {}): Promise<Cancellation> {
+    const { reason, ...options } = input;
+    return this.transport.post(
+      `/api/investigations/${encodeURIComponent(id)}/cancel`,
+      reason === undefined ? {} : { reason },
+      options,
+    );
   }
 
   getInvestigation(id: string, options: RequestOptions = {}): Promise<InvestigationDetail> {

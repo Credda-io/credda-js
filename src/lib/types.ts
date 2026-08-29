@@ -439,6 +439,64 @@ export interface InvestigationDetail {
   latestSequence: number;
 }
 
+/**
+ * The body of `POST /api/investigations/{id}/cancel`.
+ *
+ * A UNION, not a record with a boolean, because the route's whole point is that
+ * two of its answers mean different things about the operator's machine and the
+ * operator's bill, and a single shape lets a caller read one as the other.
+ *
+ * `apps/api/src/routes/investigations.ts` answers with what it ACHIEVED:
+ *
+ *   • {@link CancellationStopped} — 200 `CANCELLED` (the job was still queued
+ *     and was refused its claim) or 200 `ALREADY_CANCELLED` (it was cancelled
+ *     before this call). Nothing is running, and `state` is `CANCELLED`.
+ *
+ *   • {@link CancellationRequested} — 202 `CANCELLATION_REQUESTED`. A worker is
+ *     INSIDE the run, holding a sandbox and possibly a model call. The request
+ *     is durable and that worker honours it on its next heartbeat, but the run
+ *     HAS NOT STOPPED and the API has written no terminal state. The run writes
+ *     its own when it lets go; `listInvestigationEvents` and
+ *     `streamInvestigation` are how a caller learns that it did.
+ *
+ * Which is why `state` is typed differently on the two branches: on the
+ * requested branch it excludes `'CANCELLED'`, so `result.state === 'CANCELLED'`
+ * is a true test of "stopped" and cannot be satisfied by a run still going.
+ * Narrow on `status` before rendering anything.
+ *
+ * The two refusals are errors, not members of this union: a run that already
+ * finished is 409 `ALREADY_FINISHED`, and one executing outside the job queue —
+ * a `credda run` in somebody else's process — is 409 `NOT_CANCELLABLE`. Both
+ * arrive as a {@link CreddaError}, which is correct: neither stopped anything.
+ */
+export type Cancellation = CancellationStopped | CancellationRequested;
+
+/** Nothing is running. See {@link Cancellation}. */
+export interface CancellationStopped {
+  investigationId: string;
+  /** Re-read from the record after the write, never assumed. */
+  state: 'CANCELLED';
+  /**
+   * `CANCELLED` — this call stopped it. `ALREADY_CANCELLED` — it was already
+   * cancelled, and repeating the request is not an error.
+   */
+  status: 'CANCELLED' | 'ALREADY_CANCELLED';
+}
+
+/**
+ * Recorded, NOT stopped. A worker is still inside the run. See
+ * {@link Cancellation}.
+ */
+export interface CancellationRequested {
+  investigationId: string;
+  /**
+   * The state the run is still in. Never `'CANCELLED'`: the API does not write
+   * that here, the run does, when it lets go.
+   */
+  state: Exclude<InvestigationState, 'CANCELLED'>;
+  status: 'CANCELLATION_REQUESTED';
+}
+
 export interface InvestigationListPage {
   investigations: InvestigationSummary[];
   /** The size of the whole filtered set, so a client can tell it holds one page. */

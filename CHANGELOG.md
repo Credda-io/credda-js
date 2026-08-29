@@ -62,8 +62,8 @@ A typed client over the Credda engine API — one method per route in
 `apps/api/src/routes/`, and no method without one:
 
 - **Investigations**: `listInvestigations`, `createInvestigation`,
-  `getInvestigation`, `listInvestigationEvents`, `listInvestigationEvidence`,
-  `streamInvestigation`.
+  `cancelInvestigation`, `getInvestigation`, `listInvestigationEvents`,
+  `listInvestigationEvidence`, `streamInvestigation`.
 - **Validations**: `listValidations`, `getValidation`, `listValidationChecks`,
   `listFindings`, `listValidationEvidence`, `listValidationEvents`,
   `streamValidation`.
@@ -83,6 +83,22 @@ An SSE reader (`streamSse`, `SseDecoder`) built on `fetch` rather than
 Wire types for the whole surface, transcribed field for field from the API's own
 serializers, with the vocabularies (`InvestigationState`, `ValidationOutcome`,
 `CheckStatus`, `ResolutionConfidenceClass`, …) as string unions.
+
+`cancelInvestigation` returns a **union**, not a record with a boolean, and this
+is the one place in the package where the return type is doing safety work.
+`POST /api/investigations/{id}/cancel` reports what it achieved: `200 CANCELLED`
+means the job was still queued and nothing is running; `202
+CANCELLATION_REQUESTED` means a worker is inside the run, the request is durable
+and will be honoured on a heartbeat, and the run has **not** stopped — the API
+writes no terminal state there, the run writes its own when it lets go. A client
+that collapsed the two would show "cancelled" over a container still cloning a
+repository and still spending a model budget. So `Cancellation` is
+`CancellationStopped | CancellationRequested`, and on the requested branch
+`state` is typed to exclude `'CANCELLED'`. Both 409 refusals —
+`ALREADY_FINISHED` and `NOT_CANCELLABLE` — are thrown as `CreddaError`, because
+neither stopped anything.
+
+`CreddaErrorCode` gains `ALREADY_FINISHED` and `NOT_CANCELLABLE`.
 
 ### Changed
 

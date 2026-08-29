@@ -130,6 +130,85 @@ describe('investigations', () => {
   });
 });
 
+describe('cancelling a run', () => {
+  it('posts to the cancel route with an empty body when no reason is given', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' });
+    await clientWith(fetchImpl).cancelInvestigation('inv_1');
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations/inv_1/cancel');
+    expect(initOf(fetchImpl).method).toBe('POST');
+    // `{}`, not `{"reason":undefined}` and not an absent body: `cancelBody` is
+    // strict, and the handler parses `{}` when nothing was sent.
+    expect(initOf(fetchImpl).body).toBe('{}');
+  });
+
+  it('sends the reason, and sends nothing else', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' });
+    await clientWith(fetchImpl).cancelInvestigation('inv_1', { reason: 'wrong repository' });
+    expect(initOf(fetchImpl).body).toBe('{"reason":"wrong repository"}');
+  });
+
+  it('keeps the AbortSignal out of the body', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' });
+    const controller = new AbortController();
+    await clientWith(fetchImpl).cancelInvestigation('inv_1', { signal: controller.signal });
+    expect(initOf(fetchImpl).body).toBe('{}');
+    expect(initOf(fetchImpl).signal).toBe(controller.signal);
+  });
+
+  it('escapes the id rather than building a path out of it', async () => {
+    const fetchImpl = stub({ investigationId: 'a/b', state: 'CANCELLED', status: 'CANCELLED' });
+    await clientWith(fetchImpl).cancelInvestigation('a/b');
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations/a%2Fb/cancel');
+  });
+
+  /*
+   * THE POINT OF THE UNION. A 202 is a success at the transport level and must
+   * NOT be readable as "cancelled": a worker is still inside the run, holding a
+   * sandbox and spending a budget, and the API has written no terminal state.
+   * The body is returned intact, `state` is the run's real state, and narrowing
+   * on `status` is what tells the two apart.
+   */
+  it('returns 202 CANCELLATION_REQUESTED as itself, with the run still in its own state', async () => {
+    const fetchImpl = stub(
+      { investigationId: 'inv_1', state: 'ATTEMPTING_REPRODUCTION', status: 'CANCELLATION_REQUESTED' },
+      202,
+    );
+    const result = await clientWith(fetchImpl).cancelInvestigation('inv_1');
+    expect(result.status).toBe('CANCELLATION_REQUESTED');
+    expect(result.state).toBe('ATTEMPTING_REPRODUCTION');
+    expect(result.state).not.toBe('CANCELLED');
+  });
+
+  it('returns 200 ALREADY_CANCELLED rather than treating a repeat as an error', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'ALREADY_CANCELLED' }, 200);
+    const result = await clientWith(fetchImpl).cancelInvestigation('inv_1');
+    expect(result.status).toBe('ALREADY_CANCELLED');
+    expect(result.state).toBe('CANCELLED');
+  });
+
+  it('raises the 409 refusals with the code that says which refusal it was', async () => {
+    for (const code of ['ALREADY_FINISHED', 'NOT_CANCELLABLE']) {
+      const fetchImpl = stub({ error: { code, message: 'no' } }, 409);
+      await expect(clientWith(fetchImpl).cancelInvestigation('inv_1')).rejects.toMatchObject({
+        status: 409,
+        code,
+      });
+    }
+  });
+
+  it('is never retried, however many retries are configured', async () => {
+    const fetchImpl = stub({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 503);
+    const client = new CreddaClient({
+      baseUrl: 'https://engine.example.com',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    await expect(client.cancelInvestigation('inv_1')).rejects.toMatchObject({ status: 503 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('repositories', () => {
   it('lists them', async () => {
     const fetchImpl = stub({ repositories: [], total: 0 });

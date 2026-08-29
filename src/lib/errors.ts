@@ -14,7 +14,16 @@ export interface CreddaErrorContext {
 
 /**
  * Every code the engine API can put in `error.code` today, read off
- * `apps/api/src/errors.ts`, `auth.ts`, `organization.ts` and `stream.ts`.
+ * `apps/api/src/errors.ts`, `auth.ts`, `organization.ts`, `stream.ts` and
+ * `routes/investigations.ts`, and cross-checked against `ERROR_CODES` in
+ * `apps/api/src/openapi.ts`, which that repository's own test proves is the
+ * REACHABLE set rather than the declared one.
+ *
+ * `UNAVAILABLE` is the one member below that no response can actually carry: it
+ * is the default second argument of `unavailable()` and every call site passes
+ * its own code over it. Kept because removing an exported member of a published
+ * union breaks a build for no gain, and flagged here so it is not read as a
+ * status somebody should branch on.
  *
  * A string union rather than an enum, and `CreddaError.code` is typed
  * `string | undefined` rather than this: a server ahead of this package can
@@ -27,6 +36,10 @@ export type CreddaErrorCode =
   | 'UNAUTHENTICATED'
   | 'NOT_FOUND'
   | 'NO_ORGANIZATION'
+  /** 409, cancel route only: the run reached a terminal state. Nothing to stop. */
+  | 'ALREADY_FINISHED'
+  /** 409, cancel route only: the run is executing outside the job queue. */
+  | 'NOT_CANCELLABLE'
   | 'PAYLOAD_TOO_LARGE'
   | 'UNAVAILABLE'
   | 'TOO_MANY_STREAMS'

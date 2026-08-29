@@ -8,6 +8,7 @@
 
 export { CreddaClient } from './lib/client.js';
 export type {
+  CancelInvestigationInput,
   CreateInvestigationInput,
   ListEventsQuery,
   ListEvidenceQuery,
