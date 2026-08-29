@@ -62,6 +62,18 @@ describe('investigations', () => {
     expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations?outcome=VERIFIED');
   });
 
+  /*
+   * The queue is the only place that answers "every investigation this signal
+   * caused, including the ones that resolved nothing". Walking `/api/resolutions`
+   * by signal shows only the runs that produced a record, which is exactly the
+   * population this product must not report on selectively.
+   */
+  it('passes the signal filter, renamed away from AbortSignal as on resolutions', async () => {
+    const fetchImpl = stub({ investigations: [], total: 0 });
+    await clientWith(fetchImpl).listInvestigations({ signalId: 'sig_1' });
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations?signal=sig_1');
+  });
+
   it('returns the list page whole, so `total` is not mistaken for the page length', async () => {
     const page = { investigations: [{ id: 'inv_1' }], total: 91 };
     const result = await clientWith(stub(page)).listInvestigations({ limit: 1 });
@@ -125,6 +137,14 @@ describe('repositories', () => {
     expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/repositories?limit=5');
   });
 
+  it('reads one by id and unwraps it, rather than paging the list to find it', async () => {
+    const repository = { id: 'repo_1', name: 'acme/api', source: 'https://github.com/acme/api.git' };
+    const fetchImpl = stub({ repository });
+    const result = await clientWith(fetchImpl).getRepository('repo_1');
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/repositories/repo_1');
+    expect(result).toEqual(repository);
+  });
+
   it('reads what has been learned about one, filtered by kind', async () => {
     const fetchImpl = stub({ learnings: [], total: 0 });
     await clientWith(fetchImpl).listLearnings('repo_1', { kind: 'FRAGILE_SITE' });
@@ -175,6 +195,22 @@ describe('validations', () => {
     await clientWith(fetchImpl).listValidations({ repository: 'repo_1', state: 'RUNNING', outcome: 'FAILED' });
     expect(urlOf(fetchImpl)).toBe(
       'https://engine.example.com/api/validations?repository=repo_1&state=RUNNING&outcome=FAILED',
+    );
+  });
+
+  it('narrows findings by severity and status, so triage need not pull every row', async () => {
+    const fetchImpl = stub({ findings: [], total: 0 });
+    await clientWith(fetchImpl).listFindings('val_1', { severity: 'HIGH', status: 'OPEN' });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://engine.example.com/api/validations/val_1/findings?severity=HIGH&status=OPEN',
+    );
+  });
+
+  it('filters validation evidence by type, the same filter the investigation route takes', async () => {
+    const fetchImpl = stub({ evidence: [], total: 0 });
+    await clientWith(fetchImpl).listValidationEvidence('val_1', { type: 'TEST_RESULT' });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://engine.example.com/api/validations/val_1/evidence?type=TEST_RESULT',
     );
   });
 

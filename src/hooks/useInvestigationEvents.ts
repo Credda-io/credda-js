@@ -20,8 +20,8 @@ export function useInvestigationEvents(
   const client = useCreddaClient();
   return useEventStream<InvestigationEvent>(
     id,
-    (since, signal, reconnect) =>
-      client.streamInvestigation(id as string, { since, signal, reconnect }),
+    (since, signal, reconnect, onComplete) =>
+      client.streamInvestigation(id as string, { since, signal, reconnect, onComplete }),
     options,
   );
 }

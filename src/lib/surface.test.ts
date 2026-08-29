@@ -23,6 +23,7 @@ const ROUTED_METHODS = [
   'streamInvestigation',
   // routes/repositories.ts
   'listRepositories',
+  'getRepository',
   'listLearnings',
   // routes/resolutions.ts
   'listResolutions',

@@ -8,10 +8,15 @@
 API**: a 0–100 score for a person or business, share tokens, verifiable
 credentials, disputes, earnings, webhook verification.
 
-Credda no longer builds that product. Credda now finds the bugs and security
-vulnerabilities in a company's production and QA environments, reproduces the
-failure, diagnoses the cause, writes the patch, proves it with a test that fails
-before and passes after, and opens a pull request. It proposes and never merges.
+Credda no longer builds that product. Credda is now handed a bug report or a
+vulnerability somebody has already filed, reproduces the failure, diagnoses the
+cause, writes the patch, and proves it with a test that fails before the patch
+and passes after. It proposes and never merges.
+
+It does not go looking for defects. Every run starts from a report, and the
+README of this package has said so throughout; this paragraph said "finds the
+bugs", which is a different and larger product than the one the API below
+serves.
 
 `1.0.0` is a client for that engine. **It shares no API surface with `0.8.0`.**
 This is not a rename, a deprecation cycle or a migration: the old methods do not
@@ -63,7 +68,7 @@ A typed client over the Credda engine API — one method per route in
   `listFindings`, `listValidationEvidence`, `listValidationEvents`,
   `streamValidation`.
 - **Resolutions**: `listResolutions`, `latestResolution`, `getResolution`.
-- **Repositories and memory**: `listRepositories`, `listLearnings`.
+- **Repositories and memory**: `listRepositories`, `getRepository`, `listLearnings`.
 - **Workspace**: `getOrganization`, `listMembers`, `listApiKeys`.
 - **Operations**: `getHealth`, `isLive`, `getMetrics`.
 

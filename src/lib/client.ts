@@ -23,6 +23,8 @@ import type {
   EvidencePage,
   EvidenceType,
   FindingPage,
+  FindingSeverity,
+  FindingStatus,
   Health,
   InvestigationDetail,
   InvestigationEvent,
@@ -35,6 +37,7 @@ import type {
   LearningPage,
   OrganizationMemberPage,
   OrganizationOverview,
+  Repository,
   RepositoryListPage,
   Resolution,
   ResolutionConfidenceClass,
@@ -67,6 +70,18 @@ export interface ListInvestigationsQuery extends PageQuery {
    * and so matches no value at all. Ask `state` for what is still in flight.
    */
   outcome?: InvestigationOutcome | undefined;
+  /**
+   * The signal that raised the run, named `signalId` here for the reason
+   * {@link ListResolutionsQuery.signalId} gives: `signal` would sit next to the
+   * `AbortSignal` every query on this client takes. An unknown one is a 404,
+   * never an empty page.
+   *
+   * A run nothing raised has no signal and matches no value that can be sent,
+   * the same shape `outcome` has. It is the only way to ask for every
+   * investigation one signal caused, including the ones that resolved nothing
+   * -- walking `/api/resolutions` shows only the runs that produced a record.
+   */
+  signalId?: string | undefined;
 }
 
 export interface ListEventsQuery extends RequestOptions {
@@ -87,6 +102,16 @@ export interface ListEvidenceQuery extends PageQuery {
 
 export interface ListLearningsQuery extends PageQuery {
   kind?: LearningKind | undefined;
+}
+
+/**
+ * `severity` and `status` narrow with AND, one token each -- the route takes a
+ * single `z.enum` for both. Both columns are NOT NULL, so every finding answers
+ * both and there is no absent-value token.
+ */
+export interface ListFindingsQuery extends PageQuery {
+  severity?: FindingSeverity | undefined;
+  status?: FindingStatus | undefined;
 }
 
 export interface ListValidationsQuery extends PageQuery {
@@ -140,9 +165,9 @@ export class CreddaClient {
    * their full sets throughout; this one did not.
    */
   listInvestigations(query: ListInvestigationsQuery = {}): Promise<InvestigationListPage> {
-    const { repository, state, outcome, limit, offset, ...options } = query;
+    const { repository, state, outcome, signalId, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/investigations${queryString({ repository, state, outcome, limit, offset })}`,
+      `/api/investigations${queryString({ repository, state, outcome, signal: signalId, limit, offset })}`,
       options,
     );
   }
@@ -210,6 +235,23 @@ export class CreddaClient {
   listRepositories(query: PageQuery = {}): Promise<RepositoryListPage> {
     const { limit, offset, ...options } = query;
     return this.transport.get(`/api/repositories${queryString({ limit, offset })}`, options);
+  }
+
+  /**
+   * One repository by id.
+   *
+   * Every investigation and validation this client returns carries a
+   * `repositoryId`, and resolving one used to mean paging {@link
+   * listRepositories} until the id turned up -- a scan whose cost grows with
+   * the organisation and which no filter shortens. Unwrapped from the route's
+   * `{ repository }` envelope, as {@link getResolution} is.
+   */
+  async getRepository(id: string, options: RequestOptions = {}): Promise<Repository> {
+    const body = await this.transport.get<{ repository: Repository }>(
+      `/api/repositories/${encodeURIComponent(id)}`,
+      options,
+    );
+    return body.repository;
   }
 
   /**
@@ -286,18 +328,23 @@ export class CreddaClient {
     );
   }
 
-  listFindings(id: string, query: PageQuery = {}): Promise<FindingPage> {
-    const { limit, offset, ...options } = query;
+  /** Triage without pulling every row: `severity` and `status` narrow with AND. */
+  listFindings(id: string, query: ListFindingsQuery = {}): Promise<FindingPage> {
+    const { severity, status, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/validations/${encodeURIComponent(id)}/findings${queryString({ limit, offset })}`,
+      `/api/validations/${encodeURIComponent(id)}/findings${queryString({ severity, status, limit, offset })}`,
       options,
     );
   }
 
-  listValidationEvidence(id: string, query: PageQuery = {}): Promise<ValidationEvidencePage> {
-    const { limit, offset, ...options } = query;
+  /** `type` is the same filter `listInvestigationEvidence` takes, over the same rows. */
+  listValidationEvidence(
+    id: string,
+    query: ListEvidenceQuery = {},
+  ): Promise<ValidationEvidencePage> {
+    const { type, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/validations/${encodeURIComponent(id)}/evidence${queryString({ limit, offset })}`,
+      `/api/validations/${encodeURIComponent(id)}/evidence${queryString({ type, limit, offset })}`,
       options,
     );
   }

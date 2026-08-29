@@ -12,9 +12,14 @@
  * request header. `EventSource` can only reach this API on a deployment running
  * `CREDDA_AUTH=disabled`.
  *
- * Two server behaviours a consumer has to know about:
- *  - A stream that has carried no event for five minutes is dropped. That is
- *    not an error, and `reconnect` exists for it.
+ * Three server behaviours a consumer has to know about, each announced by a
+ * named frame before the close rather than left to a silent disconnect:
+ *  - When the run reaches a terminal state the server sends `complete` with
+ *    `{ state }`. The generator returns there and does not reconnect: the run
+ *    is over, and reopening would replay the backlog and the same frame.
+ *  - A stream that has carried no event for five minutes is dropped, with an
+ *    `idle` frame saying so. The run has NOT finished; that is not an error,
+ *    and `reconnect` exists for it.
  *  - If the key that opened the stream is revoked, the server sends an
  *    `unauthenticated` frame and closes. That surfaces here as a `CreddaError`
  *    with status 401 — the same answer the gate gives a new request.
@@ -103,12 +108,27 @@ export interface StreamOptions {
   reconnect?: boolean | undefined;
   /** Delay before reopening. Default 1s. */
   reconnectDelayMs?: number | undefined;
+  /**
+   * Called with the terminal state once, when the server says the run has
+   * finished. The generator then returns, `reconnect` or not.
+   *
+   * It is a callback rather than a final yielded value because the generator's
+   * element type is the event, and a caller looping over it must not have to
+   * discriminate a state string out of it. A caller that does not want the
+   * state can leave this off and read the return as "the run is over".
+   */
+  onComplete?: ((state: string) => void) | undefined;
 }
 
 /**
- * Yields events off one SSE route until the stream ends (or forever, with
- * `reconnect`). The `sequence` of each event is taken from the SSE `id`, which
- * is what the server frames it with, so a caller can persist a cursor.
+ * Yields events off one SSE route until the run finishes, the stream ends, or
+ * -- with `reconnect` -- the link is reopened and the run carries on. The
+ * `sequence` of each event is taken from the SSE `id`, which is what the server
+ * frames it with, so a caller can persist a cursor.
+ *
+ * Three of the server's frames are not events and are never yielded as one:
+ * `complete` ends the generator, `idle` ends the pass the server dropped, and
+ * `unauthenticated` throws. Only `complete` is final under `reconnect`.
  */
 export async function* streamSse<T>(
   transport: Transport,
@@ -117,6 +137,9 @@ export async function* streamSse<T>(
 ): AsyncGenerator<T, void, undefined> {
   let since = options.since ?? 0;
   const delay = options.reconnectDelayMs ?? 1_000;
+  // Set by a `complete` frame, which is the run's own answer and the one close
+  // there is nothing left to reconnect for.
+  let finished = false;
 
   for (;;) {
     const res = await transport.raw(`${path}?since=${since}`, {
@@ -146,6 +169,21 @@ export async function* streamSse<T>(
               code: 'UNAUTHENTICATED',
             });
           }
+          // The run reached a terminal state. Its payload is `{ state }`, not
+          // an event, so yielding it would hand the caller an object with no
+          // `sequence` and no `type` typed as one; and under `reconnect` a
+          // consumer that did not recognise this frame reopened the stream
+          // against a finished run, was sent the same backlog and the same
+          // `complete`, and went round again for as long as it was left
+          // running. `onComplete` is where the terminal state goes instead.
+          if (frame.event === 'complete') {
+            finished = true;
+            options.onComplete?.(completedState(frame.data));
+            return;
+          }
+          // The server dropped a quiet stream. The run has NOT finished, so
+          // this ends one pass and `reconnect` resumes from the same cursor.
+          if (frame.event === 'idle') break;
           const sequence = Number(frame.id);
           if (Number.isInteger(sequence) && sequence > since) since = sequence;
           yield JSON.parse(frame.data) as T;
@@ -155,10 +193,22 @@ export async function* streamSse<T>(
       await reader.cancel().catch(() => undefined);
     }
 
+    if (finished) return;
     if (options.reconnect !== true) return;
     if (options.signal?.aborted === true) return;
     await new Promise((resolve) => setTimeout(resolve, delay));
   }
+}
+
+/** The terminal state off a `complete` frame, or '' if the frame carried none. */
+function completedState(data: string): string {
+  try {
+    const parsed = JSON.parse(data) as { state?: unknown };
+    if (typeof parsed.state === 'string') return parsed.state;
+  } catch {
+    /* fall through */
+  }
+  return '';
 }
 
 /** The server's own wording when it can be read; never a substitute of ours. */

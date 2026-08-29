@@ -99,7 +99,7 @@ accepts is opening an investigation.
 
 | Method | Route |
 | --- | --- |
-| `listInvestigations({ repository, state, outcome, limit, offset })` | `GET /api/investigations` |
+| `listInvestigations({ repository, signalId, state, outcome, limit, offset })` | `GET /api/investigations` |
 | `createInvestigation({ repositoryId, issueTitle, issueBody, issueRef? })` | `POST /api/investigations` |
 | `getInvestigation(id)` | `GET /api/investigations/:id` |
 | `listInvestigationEvents(id, { since, limit, includeDebug })` | `GET /api/investigations/:id/events` |
@@ -117,8 +117,8 @@ you watch it with is the event stream.
 | `listValidations({ repository, state, outcome, limit, offset })` | `GET /api/validations` |
 | `getValidation(id)` | `GET /api/validations/:id` |
 | `listValidationChecks(id, { limit, offset })` | `GET /api/validations/:id/checks` |
-| `listFindings(id, { limit, offset })` | `GET /api/validations/:id/findings` |
-| `listValidationEvidence(id, { limit, offset })` | `GET /api/validations/:id/evidence` |
+| `listFindings(id, { severity, status, limit, offset })` | `GET /api/validations/:id/findings` |
+| `listValidationEvidence(id, { type, limit, offset })` | `GET /api/validations/:id/evidence` |
 | `listValidationEvents(id, { since, limit, includeDebug })` | `GET /api/validations/:id/events` |
 | `streamValidation(id, { since, reconnect })` | `GET /api/validations/:id/stream` (SSE) |
 
@@ -155,6 +155,7 @@ a 404 for an id that does not exist. Render them differently.
 | Method | Route |
 | --- | --- |
 | `listRepositories({ limit, offset })` | `GET /api/repositories` |
+| `getRepository(id)` | `GET /api/repositories/:id` |
 | `listLearnings(repositoryId, { kind, limit, offset })` | `GET /api/repositories/:id/learnings` |
 | `getOrganization()` | `GET /api/organization` |
 | `listMembers({ limit, offset })` | `GET /api/organization/members` |
@@ -235,13 +236,19 @@ for await (const event of credda.streamInvestigation(id, { since: 0, reconnect: 
 }
 ```
 
-Three behaviours to build around:
+Four behaviours to build around:
 
 - **`debug` events never arrive on a stream.** The server withholds them and
   offers no way to ask. They stay readable with
   `listInvestigationEvents(id, { includeDebug: true })`.
-- **A stream carrying no event for five minutes is dropped.** That is not an
-  error. `reconnect: true` reopens from the last sequence seen (it defaults to
+- **A finished run closes its own stream.** When the run reaches a terminal
+  state the server sends a `complete` frame carrying that state; the generator
+  returns there and does **not** reconnect, because there is nothing left to
+  reconnect for. Pass `onComplete` to read the state, or take the return as
+  "the run is over". In the hooks it arrives as `completedState`.
+- **A stream carrying no event for five minutes is dropped**, with an `idle`
+  frame saying so. That is not an error and the run has not finished.
+  `reconnect: true` reopens from the last sequence seen (it defaults to
   `true` in the hooks, `false` in the generator).
 - **A revoked key ends the stream mid-flight.** The server re-checks the
   credential once a second and sends an `unauthenticated` frame before closing;

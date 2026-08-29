@@ -128,6 +128,56 @@ describe('streamSse', () => {
     expect(fetchImpl.mock.calls[1]![0]).toBe('http://x/s?since=11');
   });
 
+  it('stops on the complete frame instead of reconnecting against a finished run', async () => {
+    // The defect this guards: `complete` was neither recognised nor stopped on,
+    // so with `reconnect` a consumer reopened a finished run, was handed the
+    // same backlog and the same frame, and went round for as long as it ran.
+    const fetchImpl = vi.fn(async () =>
+      sseResponse([
+        frame(1, 'A', { sequence: 1 }),
+        'event: complete\ndata: {"state":"READY_FOR_REVIEW"}\n\n',
+      ]),
+    );
+    const states: string[] = [];
+    const received: Array<{ sequence: number }> = [];
+    for await (const event of streamSse<{ sequence: number }>(transport(fetchImpl), '/s', {
+      reconnect: true,
+      reconnectDelayMs: 0,
+      onComplete: (state) => states.push(state),
+    })) {
+      received.push(event);
+    }
+    // The terminal state is reported once, and never as an event.
+    expect(received.map((e) => e.sequence)).toEqual([1]);
+    expect(states).toEqual(['READY_FOR_REVIEW']);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('reconnects after an idle frame, because the run has not finished', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return sseResponse([
+          frame(4, 'A', { sequence: 4 }),
+          'event: idle\ndata: {"reason":"no events for five minutes; the run has not reached a terminal state"}\n\n',
+        ]);
+      }
+      return sseResponse([frame(5, 'B', { sequence: 5 })]);
+    });
+    const received: Array<{ sequence: number }> = [];
+    for await (const event of streamSse<{ sequence: number }>(transport(fetchImpl), '/s', {
+      reconnect: true,
+      reconnectDelayMs: 0,
+    })) {
+      received.push(event);
+      if (received.length === 2) break;
+    }
+    // The idle frame is not an event, and the resume carries the cursor.
+    expect(received.map((e) => e.sequence)).toEqual([4, 5]);
+    expect(fetchImpl.mock.calls[1]![0]).toBe('http://x/s?since=4');
+  });
+
   it('turns the revocation frame into a 401, the same answer the gate gives', async () => {
     const fetchImpl = vi.fn(async () =>
       sseResponse([
