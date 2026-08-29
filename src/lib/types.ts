@@ -14,10 +14,16 @@
 /**
  * `packages/shared/src/states.ts` — INVESTIGATION_STATES.
  *
- * The patch-path states (`GENERATING_PATCH`, `VERIFYING` and the rest) are
- * absent because they are absent from that array today, not because Credda
- * does not fix things: ADR 0018 makes the fix the product and lists restoring
- * them as step 1. This union gains members when that array does.
+ * This union said, until 2026-08-29, that the patch-path states were absent
+ * because they were absent from that array, and promised to gain members when
+ * that array did. The array gained them on 2026-08-27, when ADR 0019 put the
+ * Fix and Verify stages back on the investigation path, and this union did not
+ * follow. `apps/api/src/serialize.ts` writes `state` straight through as a
+ * string, so a run that reaches `READY_FOR_REVIEW` has been arriving as a value
+ * this type says cannot exist — and `listInvestigations` would not let a caller
+ * filter for one.
+ *
+ * `REPORT_REFUTED` (ADR 0020) was missing for the same reason and is here too.
  */
 export type InvestigationState =
   | 'CREATED'
@@ -33,15 +39,33 @@ export type InvestigationState =
   | 'REPRODUCED_NOT_DIAGNOSED'
   | 'CONTRADICTS_SPECIFICATION'
   | 'ISSUE_ALREADY_RESOLVED'
+  | 'REPORT_REFUTED'
   | 'NO_CHANGE_REQUIRED'
   | 'NO_RUNNABLE_CHECK'
   | 'REPRODUCTION_FAILED'
   | 'INSUFFICIENT_EVIDENCE'
+  | 'GENERATING_PATCH'
+  | 'TESTING_PATCH'
+  | 'VERIFYING'
+  | 'VERIFIED'
+  | 'READY_FOR_REVIEW'
+  | 'VERIFICATION_FAILED'
+  | 'PATCH_REJECTED'
   | 'NEEDS_HUMAN_INPUT'
   | 'CANCELLED'
   | 'FAILED';
 
-/** `packages/shared/src/states.ts` — OUTCOMES. Same note as {@link InvestigationState}. */
+/**
+ * `packages/shared/src/states.ts` — OUTCOMES. Same note as
+ * {@link InvestigationState}.
+ *
+ * `VERIFIED`, `PARTIALLY_VERIFIED` and `PATCH_REJECTED` are the three the fix
+ * stage produces. None of them says the change was merged: Credda proposes, and
+ * a human is the merge authority. `PARTIALLY_VERIFIED` is the weaker claim of
+ * the first two — fewer checks stood behind the change, not that the change is
+ * wrong — and `outcomeForState` in `core` returns it when no verdict is given,
+ * because an unknown verdict must never round up.
+ */
 export type InvestigationOutcome =
   | 'REPRODUCED_AND_DIAGNOSED'
   | 'REPRODUCED_NOT_DIAGNOSED'
@@ -49,6 +73,9 @@ export type InvestigationOutcome =
   | 'NO_CHANGE_REQUIRED'
   | 'NO_RUNNABLE_CHECK'
   | 'INCONCLUSIVE'
+  | 'VERIFIED'
+  | 'PARTIALLY_VERIFIED'
+  | 'PATCH_REJECTED'
   | 'CANCELLED'
   | 'ERRORED';
 
