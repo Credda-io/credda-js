@@ -18,15 +18,16 @@
 > webhooks. Credda no longer builds that product, and **none of that surface
 > exists in 1.0.0**. Nothing was renamed and nothing is deprecated — it is gone.
 >
-> `1.0.0` is a client for the **Credda engine**, which finds defects and
-> vulnerabilities in your code and proposes fixes. Upgrading from `0.x` is a
-> rewrite, not a migration, and there is no compatibility layer. If you depend
+> `1.0.0` is a client for the **Credda engine**, which reproduces defects and
+> vulnerabilities you report and proposes fixes for them. Upgrading from `0.x`
+> is a rewrite, not a migration, and there is no compatibility layer. If you depend
 > on the trust client, **pin `@credda/js@0.8.0`**; see [CHANGELOG.md](CHANGELOG.md).
 
-Credda finds the bugs and security vulnerabilities in a company's production and
-QA environments, reproduces the failure, diagnoses the cause, writes the patch,
-proves it with a test that fails before and passes after, and opens a pull
-request. It proposes and never merges.
+You label a bug report or a security vulnerability; Credda reproduces the
+failure, diagnoses the cause, writes the patch, proves it with a test that fails
+before and passes after, and hands back a diff. Opening a pull request is an
+opt-in delivery step, off by default, that has not yet run against a real
+repository. It proposes and never merges.
 
 This package is the typed TypeScript client and React hooks for the engine's
 HTTP API — one method per route, and no method without one. The routes it wraps
@@ -273,16 +274,17 @@ never retried either: a degraded database does not recover by being asked twice.
 
 ## Status of the fix path
 
-Credda's product is the fix: reproduce, diagnose, patch, prove, open a pull
-request. What a user will look for and not find **on this HTTP API** is below,
+Credda's product is the fix: reproduce, diagnose, patch, prove, hand back a
+diff. What a user will look for and not find **on this HTTP API** is below,
 and it is a status with a date on it rather than a position:
 
 - **No pull-request route, as of 2026-08-28.** Nothing here returns a PR link or
-  opens one. The engine does open pull requests -- its GitHub App asks an
+  opens one. The engine can open a pull request -- its GitHub App asks an
   operator for Contents write and Pull requests write, and its delivery path
-  uses them for a run that reaches a proven verdict -- but that happens on the
-  engine's own delivery path and is not surfaced as a route here. When a route
-  appears, a method appears; this package will not invent one in the meantime.
+  uses them for a run that reaches a proven verdict -- but that delivery is
+  opt-in, off unless a caller turns it on, has not yet run against a real
+  repository, and is not surfaced as a route here. When a route appears, a
+  method appears; this package will not invent one in the meantime.
 - **`patches`, `verifications` and `resolution.fix` are typed and served, and
   are `null` or empty on a run that did not enter the patch stage.** The API
   serializes them on every investigation detail and every resolution record.
@@ -293,7 +295,8 @@ and it is a status with a date on it rather than a position:
   run happened on 2026-08-27, ADR 0019 put the Fixer and the Verifier back on
   the investigation path the same day, and the following day the engine's
   delivery path was wired to open a pull request for a run that reaches a proven
-  verdict.
+  verdict -- as an opt-in step, off by default, not yet exercised against a real
+  repository.
 
   What did **not** change is the rule that made the old sentence worth writing:
   a stage that did not run is never reported as a measured zero. Against the
