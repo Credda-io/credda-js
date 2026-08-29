@@ -1,9 +1,7 @@
 <p align="center">
   <a href="https://credda.io">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-lockup-white.png">
-      <img alt="Credda" src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-lockup-black.png" width="480">
-    </picture>
+    <img alt="Credda" width="96" height="96"
+         src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-mark-spectrum.png">
   </a>
 </p>
 
