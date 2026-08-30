@@ -297,7 +297,7 @@ export class CreddaClient {
    * Throws a {@link CreddaError} for the two refusals, both 409: code
    * `ALREADY_FINISHED` when the run reached a terminal state — there is nothing
    * to stop and nothing to undo — and `NOT_CANCELLABLE` when it is executing
-   * outside the job queue, which is what `credda run` does. The API cannot
+   * outside the job queue, which is what `credda investigate` does. The API cannot
    * reach that process and will not pretend it did.
    *
    * Repeating the call is safe: an already-cancelled run answers 200

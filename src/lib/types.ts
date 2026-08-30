@@ -514,7 +514,7 @@ export interface InvestigationReplayed {
  *
  * The two refusals are errors, not members of this union: a run that already
  * finished is 409 `ALREADY_FINISHED`, and one executing outside the job queue —
- * a `credda run` in somebody else's process — is 409 `NOT_CANCELLABLE`. Both
+ * a `credda investigate` in somebody else's process — is 409 `NOT_CANCELLABLE`. Both
  * arrive as a {@link CreddaError}, which is correct: neither stopped anything.
  */
 export type Cancellation = CancellationStopped | CancellationRequested;

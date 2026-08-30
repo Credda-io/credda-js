@@ -48,7 +48,7 @@ are documented at [api.credda.io/reference](https://api.credda.io/reference).
 npm install @credda/js
 ```
 
-> **This installs 0.8.0 today — checked 2026-08-28.** The latest `@credda/js` on
+> **This installs 0.8.0 today — re-checked 2026-08-30.** The latest `@credda/js` on
 > npm is still **0.8.0**, the retired reliability-score client described in the
 > warning above. `1.0.0` — the version this repository contains and this README
 > documents — is **not published yet**. A bare `npm install @credda/js` therefore
@@ -208,7 +208,7 @@ typed to exclude `'CANCELLED'`.
 Two refusals throw a `CreddaError`, both `409`. `ALREADY_FINISHED`: the run
 reached a terminal state, so there is nothing to stop and nothing to undo.
 `NOT_CANCELLABLE`: the run is executing outside the job queue — which is what
-`credda run` does — so this API cannot reach it, and will not pretend it did.
+`credda investigate` does — so this API cannot reach it, and will not pretend it did.
 
 ### Validations — a change being checked before it lands
 
