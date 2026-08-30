@@ -71,6 +71,22 @@ const { investigations, total } = await credda.listInvestigations({ state: 'REPR
 console.log(`${investigations.length} of ${total}`);
 ```
 
+### A worked example you can run
+
+```console
+$ git clone https://github.com/Credda-io/credda-js && cd credda-js
+$ npm install && npm run example
+```
+
+[`examples/watch-a-run.mjs`](examples/watch-a-run.mjs) lists the queue, reads one
+investigation and watches it to a terminal state. It needs **no key, no account
+and no network**: the engine is a loopback stub the script starts itself, and
+the client it drives is the built package out of `dist/`. It shows how the client
+is called and proves a real HTTP round trip through it works — the bearer
+header, the query string, the SSE framing, the terminal `complete` frame. It is
+not evidence about the engine: the payloads are hand-written to the types in
+`src/lib/types.ts`.
+
 There is **no default base URL**. Credda runs against your own deployment, and a
 built-in hostname would be this package guessing where your engine lives — a
 wrong guess that sends your bearer key there.

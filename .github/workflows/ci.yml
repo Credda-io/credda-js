@@ -22,6 +22,12 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # The worked example in examples/, run. It imports the BUILT package from
+      # dist/ and asserts what comes back, so this is also the one check that
+      # the published entry point resolves and the client survives a real HTTP
+      # round trip. It needs no key and no network: the engine is a loopback
+      # stub the script starts itself.
+      - run: npm run example
 
   # surface-parity WAS HERE AND IS DELETED ON PURPOSE.
   #

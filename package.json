@@ -32,7 +32,10 @@
     "build": "vite build && tsc --emitDeclarationOnly --declaration --outDir dist",
     "dev": "vite build --watch",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "example": "npm run build && node examples/watch-a-run.mjs",
+    "check": "npm run typecheck && npm test && npm run build",
+    "prepublishOnly": "npm run check"
   },
   "peerDependencies": {
     "react": ">=18",
