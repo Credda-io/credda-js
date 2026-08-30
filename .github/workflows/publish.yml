@@ -51,7 +51,7 @@ jobs:
             echo "::error::Tag $tag does not name version $version. A publish cannot be undone."
             exit 1
           fi
-      - run: npm install
+      - run: npm ci
       - run: npm run build
       # The suites build from src/ in process; this is the only thing that
       # starts what is about to be published. It ran on every pull request
@@ -84,7 +84,7 @@ jobs:
             echo "::error::Tag $tag does not name version $version. A publish cannot be undone."
             exit 1
           fi
-      - run: npm install
+      - run: npm ci
       - run: npm run build
       - name: Retarget the build to the Credda-io GitHub Packages scope
         run: |
