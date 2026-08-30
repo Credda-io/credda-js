@@ -1,8 +1,9 @@
 {
   "generator": "scripts/generate-route-surface.ts",
-  "generatedAt": "2026-08-29T23:51:41.548Z",
-  "coreCommit": "620ea75030c30d41cce7d69c7d4e4b10ee3b0591",
+  "generatedAt": "2026-08-30T05:43:42.908Z",
+  "coreCommit": "e167f0b3bf413b0583fcb7e4ed46b4a8636477c2",
   "digest": "sha256-cc61f06334eb88f0a6a9475c8fb381c8ad2b454e4cfa1ab42dfa774a29dbb108",
+  "vocabularyDigest": "sha256-937dfad89693fdc6a3f1502110076d0a150b440ea44dcc24d93e07b31bf7f81a",
   "routeCount": 27,
   "routes": [
     {
@@ -296,5 +297,188 @@
         503
       ]
     }
-  ]
+  ],
+  "vocabularies": {
+    "GET /api/investigations": {
+      "hasSignal": [
+        "true",
+        "false",
+        "1",
+        "0"
+      ],
+      "state": [
+        "CREATED",
+        "PREPARING_ENVIRONMENT",
+        "ANALYZING_REPOSITORY",
+        "UNDERSTANDING_ISSUE",
+        "INVESTIGATING",
+        "ATTEMPTING_REPRODUCTION",
+        "REPRODUCED",
+        "DIAGNOSING",
+        "ROOT_CAUSE_IDENTIFIED",
+        "REPRODUCED_AND_DIAGNOSED",
+        "REPRODUCED_NOT_DIAGNOSED",
+        "CONTRADICTS_SPECIFICATION",
+        "ISSUE_ALREADY_RESOLVED",
+        "REPORT_REFUTED",
+        "NO_CHANGE_REQUIRED",
+        "NO_RUNNABLE_CHECK",
+        "REPRODUCTION_FAILED",
+        "INSUFFICIENT_EVIDENCE",
+        "GENERATING_PATCH",
+        "TESTING_PATCH",
+        "VERIFYING",
+        "VERIFIED",
+        "READY_FOR_REVIEW",
+        "VERIFICATION_FAILED",
+        "PATCH_REJECTED",
+        "NEEDS_HUMAN_INPUT",
+        "CANCELLED",
+        "FAILED"
+      ],
+      "outcome": [
+        "REPRODUCED_AND_DIAGNOSED",
+        "REPRODUCED_NOT_DIAGNOSED",
+        "CONTRADICTS_SPECIFICATION",
+        "NO_CHANGE_REQUIRED",
+        "NO_RUNNABLE_CHECK",
+        "INCONCLUSIVE",
+        "VERIFIED",
+        "PARTIALLY_VERIFIED",
+        "PATCH_REJECTED",
+        "CANCELLED",
+        "ERRORED"
+      ]
+    },
+    "GET /api/investigations/{id}/events": {
+      "includeDebug": [
+        "true",
+        "false",
+        "1",
+        "0"
+      ]
+    },
+    "GET /api/investigations/{id}/evidence": {
+      "type": [
+        "TEST_RESULT",
+        "REPRODUCTION",
+        "STACK_TRACE",
+        "LOG",
+        "COMMAND_OUTPUT",
+        "HTTP_RESPONSE",
+        "BROWSER_OBSERVATION",
+        "SCREENSHOT",
+        "CODE_REFERENCE",
+        "GIT_HISTORY",
+        "BUILD_RESULT",
+        "TYPECHECK_RESULT",
+        "LINT_RESULT",
+        "PERFORMANCE_RESULT",
+        "VERIFICATION",
+        "VALUE_OBSERVATION",
+        "SPECIFICATION",
+        "VULNERABILITY"
+      ]
+    },
+    "GET /api/repositories/{id}/learnings": {
+      "kind": [
+        "REPRODUCTION_RECIPE",
+        "FRAGILE_SITE",
+        "REJECTED_APPROACH",
+        "NON_DEFECT",
+        "CONVENTION"
+      ]
+    },
+    "GET /api/resolutions": {
+      "hasSignal": [
+        "true",
+        "false",
+        "1",
+        "0"
+      ],
+      "confidence": [
+        "ESTABLISHED",
+        "PARTIALLY_ESTABLISHED",
+        "NOT_ESTABLISHED"
+      ]
+    },
+    "GET /api/validations": {
+      "state": [
+        "CREATED",
+        "ANALYZING_CHANGE",
+        "UNDERSTANDING_INTENT",
+        "PLANNING",
+        "PREPARING_ENVIRONMENT",
+        "RUNNING",
+        "CONFIRMING_FINDINGS",
+        "INVESTIGATING_FINDING",
+        "COMPLETED",
+        "CANCELLED",
+        "FAILED"
+      ],
+      "outcome": [
+        "VERIFIED",
+        "FAILED",
+        "BLOCKED",
+        "INCONCLUSIVE",
+        "NO_CHANGE_REQUIRED",
+        "CANCELLED",
+        "ERRORED"
+      ]
+    },
+    "GET /api/validations/{id}/checks": {
+      "status": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "PRE_EXISTING_FAILURE",
+        "BLOCKED",
+        "SKIPPED"
+      ]
+    },
+    "GET /api/validations/{id}/findings": {
+      "severity": [
+        "HIGH",
+        "MEDIUM",
+        "LOW"
+      ],
+      "status": [
+        "OPEN",
+        "DISMISSED",
+        "ENVIRONMENT_RELATED",
+        "RESOLVED"
+      ]
+    },
+    "GET /api/validations/{id}/evidence": {
+      "type": [
+        "TEST_RESULT",
+        "REPRODUCTION",
+        "STACK_TRACE",
+        "LOG",
+        "COMMAND_OUTPUT",
+        "HTTP_RESPONSE",
+        "BROWSER_OBSERVATION",
+        "SCREENSHOT",
+        "CODE_REFERENCE",
+        "GIT_HISTORY",
+        "BUILD_RESULT",
+        "TYPECHECK_RESULT",
+        "LINT_RESULT",
+        "PERFORMANCE_RESULT",
+        "VERIFICATION",
+        "VALUE_OBSERVATION",
+        "SPECIFICATION",
+        "VULNERABILITY"
+      ]
+    },
+    "GET /api/validations/{id}/events": {
+      "includeDebug": [
+        "true",
+        "false",
+        "1",
+        "0"
+      ]
+    }
+  }
 }

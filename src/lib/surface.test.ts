@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { CreddaClient } from './client.js';
 import * as headless from '../headless.js';
 import surface from './route-surface.json' with { type: 'json' };
+import { FILTER_VOCABULARIES, UNTYPED_FILTERS } from './vocabularies.js';
 
 /**
  * A guard on the shape of the package rather than on any one call.
@@ -294,5 +295,112 @@ describe('the package export surface', () => {
     expect(documented.length, 'no hook rows were found, so this checked nothing').toBeGreaterThan(4);
     expect(documented).toEqual(REACT_EXPORTS.filter((name) => name.startsWith('use')).sort());
     expect(readme).toContain('CreddaProvider');
+  });
+});
+
+/**
+ * The engine's query vocabularies, against the unions in `types.ts`.
+ *
+ * WHY THIS EXISTS. The four `InvestigationState` / `InvestigationOutcome` /
+ * `ValidationState` / `ValidationOutcome` unions -- and the six beside them --
+ * were transcribed from `core`'s `packages/shared` by hand and held there by
+ * nothing. A union is erased at runtime, so no test could see one: that is how
+ * `READY_FOR_REVIEW` and `REPORT_REFUTED` were arriving over the wire as values
+ * `InvestigationState` said could not exist, with this suite green. A typed
+ * client that omits a state the engine can return types away a real value.
+ *
+ * The copy of `route-surface.json` this repository holds carried no
+ * `vocabularies` block until 2026-08-30 -- it was generated at core `620ea75`,
+ * before the block existed -- so there was nothing to check against either.
+ * `credda-mcp` has held its tool schemas to that block since it was added; this
+ * is the mirror of that check, over unions instead of JSON schemas.
+ *
+ * `vocabularies.ts` is the missing half: the members as VALUES. It is pinned to
+ * the unions by the compiler (`satisfies` one way, `Exhaustive` the other) and
+ * pinned to the engine here. Note that `tsconfig.json` excludes `*.test.ts`
+ * from `tsc`, so a type-level assertion written in THIS file would not be
+ * checked by anything -- which is exactly why the witnesses live in a source
+ * file and not here.
+ */
+describe('the query vocabularies', () => {
+  const vocabularies = surface.vocabularies as Record<string, Record<string, readonly string[]>>;
+
+  it('holds a vocabulary block that has not been edited by hand', () => {
+    const digest = `sha256-${createHash('sha256').update(JSON.stringify(surface.vocabularies)).digest('hex')}`;
+    expect(digest, 'route-surface.json was modified after generation; re-copy it from core').toBe(
+      surface.vocabularyDigest,
+    );
+  });
+
+  it('names only routes the engine serves', () => {
+    expect(Object.keys(vocabularies).length, 'the artifact declares no vocabularies at all').toBeGreaterThan(0);
+    for (const key of Object.keys(vocabularies)) {
+      expect(KEYS, `${key} carries a vocabulary but is not a route the engine serves`).toContain(key);
+    }
+  });
+
+  /*
+   * Both directions. A filter the engine gains with no union fails here by
+   * name; a mapping left behind for a filter the engine dropped fails too.
+   */
+  it('accounts for every declared filter, as a union or as a stated refusal', () => {
+    const declared = Object.entries(vocabularies).flatMap(([key, params]) =>
+      Object.keys(params).map((param) => `${key} ?${param}`),
+    );
+    expect(declared.length, 'no filters were read out of the artifact, so this checked nothing').toBeGreaterThan(10);
+
+    const unaccounted = Object.entries(vocabularies).flatMap(([key, params]) =>
+      Object.keys(params)
+        .filter((param) => FILTER_VOCABULARIES[key]?.[param] === undefined && !(param in UNTYPED_FILTERS))
+        .map((param) => `${key} ?${param}`),
+    );
+    expect(
+      unaccounted,
+      'the engine declares a vocabulary for these filters and this client neither types them nor ' +
+        'says why not. Add the union to vocabularies.ts, or an entry to UNTYPED_FILTERS with a reason.',
+    ).toEqual([]);
+
+    const claimed = Object.entries(FILTER_VOCABULARIES).flatMap(([key, params]) =>
+      Object.keys(params)
+        .filter((param) => vocabularies[key]?.[param] === undefined)
+        .map((param) => `${key} ?${param}`),
+    );
+    expect(claimed, 'this client types these filters and the engine no longer declares them').toEqual([]);
+  });
+
+  /**
+   * The assertion the four unions were missing. `toEqual` on the array, not
+   * `toContain` on a member: a union that has lost a value the engine can
+   * return fails exactly as loudly as one that has gained a value the engine
+   * cannot, and the order is the engine's own `as const` order.
+   */
+  it('is the union in types.ts, value for value, for every filter it types', () => {
+    let checked = 0;
+    for (const [key, params] of Object.entries(FILTER_VOCABULARIES)) {
+      for (const [param, union] of Object.entries(params)) {
+        const engine = vocabularies[key]?.[param];
+        expect(engine, `${key} ?${param} is typed here but the engine declares nothing for it`).toBeDefined();
+        expect(
+          [...union],
+          `the union behind ${key} ?${param} disagrees with the engine. Do NOT edit it to make this ` +
+            'pass without knowing which side moved: a value dropped from types.ts is a value the ' +
+            'engine can return that a caller cannot name.',
+        ).toEqual([...(engine as readonly string[])]);
+        checked += 1;
+      }
+    }
+    // The loop body must have run. Eleven filters are typed -- ten distinct
+    // unions, with EVIDENCE_TYPES serving both evidence routes -- and a mapping
+    // that silently emptied would otherwise make this assertion a green no-op.
+    expect(checked, 'no filter was compared, so this checked nothing').toBe(11);
+  });
+
+  it('gives every filter it leaves untyped a reason, not a silence', () => {
+    const declared = new Set(Object.values(vocabularies).flatMap((params) => Object.keys(params)));
+    expect(Object.keys(UNTYPED_FILTERS).length, 'nothing is excused, so this checked nothing').toBeGreaterThan(0);
+    for (const [param, reason] of Object.entries(UNTYPED_FILTERS)) {
+      expect(declared, `${param} is excused but the engine declares no vocabulary for it`).toContain(param);
+      expect(reason.trim().length, `${param} is left untyped with no reason`).toBeGreaterThan(40);
+    }
   });
 });
