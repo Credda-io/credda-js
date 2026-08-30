@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { CreddaClient } from './client.js';
 import * as headless from '../headless.js';
@@ -140,6 +141,43 @@ describe('the client surface', () => {
       .filter((name) => name !== 'constructor')
       .sort();
     expect(methods).toEqual(ROUTED_METHODS);
+  });
+
+  /**
+   * The README's method tables are the client surface too.
+   *
+   * Everything above holds `route-surface.json`, `CLIENT_METHODS` and
+   * `CreddaClient.prototype` to each other, and none of it reads the document
+   * a caller actually installs this package from. So renaming a method,
+   * updating `CLIENT_METHODS` with it and leaving README.md pointing at the
+   * old name passed every test in this file, and shipped a README documenting
+   * a method that does not exist. `credda-mcp` holds its two README tables to
+   * its code; this package had no counterpart.
+   *
+   * BOTH DIRECTIONS, and the extraction is guarded: a table that stops
+   * matching would otherwise make this assertion an empty one.
+   */
+  it('documents exactly these methods in the README, and no others', () => {
+    const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+    /* Only the `| Method | Route |` tables. The hooks table further down is a
+     * different surface with its own header, and folding it in here would be
+     * this assertion quietly widening to fit whatever it found. */
+    const tables = [...readme.matchAll(/^\| Method \| Route \|\n\|[^\n]*\|\n((?:\|[^\n]*\|\n)+)/gm)];
+    expect(tables.length, 'no `| Method | Route |` tables were found in README.md').toBe(4);
+
+    const documented = [
+      ...new Set(
+        tables.flatMap((table) =>
+          [...(table[1] ?? '').matchAll(/^\|\s*`([A-Za-z][A-Za-z0-9]*)\(/gm)].map(
+            (match) => match[1] as string,
+          ),
+        ),
+      ),
+    ].sort();
+
+    expect(documented.length, 'no method rows were found in README.md, so this checked nothing').
+      toBeGreaterThan(10);
+    expect(documented).toEqual(ROUTED_METHODS);
   });
 
   it('carries nothing from the retired trust surface', () => {

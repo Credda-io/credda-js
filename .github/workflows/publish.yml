@@ -14,8 +14,11 @@ name: publish
 #    built-in GITHUB_TOKEN. The public npmjs name (@credda/...) is unchanged.
 #
 # A published version cannot be unpublished, so releasing is gated on a tag.
-# The tag version should match package.json. workflow_dispatch is available
-# for a manual re-run.
+# The tag version MUST match package.json, and that is now a step rather than
+# this sentence: `on.push.tags: 'v*'` accepts any tag, so `v9.9.9` published
+# whatever package.json said and both jobs went green. workflow_dispatch is
+# available for a manual re-run, and carries no tag, so the check is skipped
+# there rather than failed.
 #
 # HUMAN STEP: set an `NPM_TOKEN` repo secret (npm Automation token with
 # publish rights on the @credda scope) under Settings, Secrets and variables,
@@ -37,8 +40,23 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      - name: The tag names the version being published
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          version=$(node -p "require('./package.json').version")
+          echo "tag $tag, package.json $version"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::Tag $tag does not name version $version. A publish cannot be undone."
+            exit 1
+          fi
       - run: npm install
       - run: npm run build
+      # The suites build from src/ in process; this is the only thing that
+      # starts what is about to be published. It ran on every pull request
+      # and on no publish.
+      - run: npm run example
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -55,6 +73,17 @@ jobs:
           node-version: 22
           registry-url: https://npm.pkg.github.com
           scope: '@credda-io'
+      - name: The tag names the version being published
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          version=$(node -p "require('./package.json').version")
+          echo "tag $tag, package.json $version"
+          if [ "$tag" != "v$version" ]; then
+            echo "::error::Tag $tag does not name version $version. A publish cannot be undone."
+            exit 1
+          fi
       - run: npm install
       - run: npm run build
       - name: Retarget the build to the Credda-io GitHub Packages scope
@@ -63,14 +92,21 @@ jobs:
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # This step is named Confirm and could not fail, for two independent
+      # reasons: `continue-on-error: true`, and a loop that breaks on 200 and
+      # otherwise falls off the end with no non-zero exit. It was a `curl` that
+      # printed. Both are gone: a publish that does not appear under the org is
+      # a red job, which is the only way anyone finds out.
       - name: Confirm the package is registered under the Credda-io org
-        continue-on-error: true
         run: |
+          set -uo pipefail
           UNSCOPED=$(node -e "console.log(require('./package.json').name.split('/')[1])")
           ENC=$(node -e "console.log(encodeURIComponent(require('./package.json').name))")
           for N in "$UNSCOPED" "$ENC"; do
             echo "== querying org package name=$N =="
             code=$(curl -sS -o resp.json -w '%{http_code}' -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github+json" "https://api.github.com/orgs/Credda-io/packages/npm/$N")
             echo "HTTP $code"; cat resp.json; echo
-            if [ "$code" = "200" ]; then echo "CONFIRMED under org, package_name=$N"; break; fi
+            if [ "$code" = "200" ]; then echo "CONFIRMED under org, package_name=$N"; exit 0; fi
           done
+          echo "::error::Neither $UNSCOPED nor $ENC is listed under the Credda-io org after publishing."
+          exit 1

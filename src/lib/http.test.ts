@@ -42,8 +42,27 @@ describe('Transport construction', () => {
     );
   });
 
-  it('refuses when there is no fetch to use', () => {
-    expect(() => new Transport({ baseUrl: 'http://x', fetch: undefined as never })).not.toThrow();
+  /* This was one test titled "refuses when there is no fetch to use" whose
+   * only assertion was `.not.toThrow()`. The title named the refusal and the
+   * assertion pinned the opposite, so whichever a reader believed, the file
+   * proved the other -- and the refusal itself, the line that stops a bearer
+   * key being handed to `undefined`, was never executed by anything. Two
+   * tests, each saying what it asserts. */
+  it('falls back to the global fetch when the config leaves it undefined', () => {
+    expect(() => new Transport({ baseUrl: 'http://x', fetch: undefined })).not.toThrow();
+  });
+
+  it('refuses when there is no fetch to fall back to either', () => {
+    const global = globalThis.fetch;
+    try {
+      (globalThis as { fetch?: unknown }).fetch = undefined;
+      expect(() => new Transport({ baseUrl: 'http://x' })).toThrow(/no fetch available/);
+      expect(() => new Transport({ baseUrl: 'http://x', fetch: undefined })).toThrow(
+        /no fetch available/,
+      );
+    } finally {
+      globalThis.fetch = global;
+    }
   });
 });
 

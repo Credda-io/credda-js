@@ -31,6 +31,15 @@ opens none unless you set its `open-pull-request` input, which defaults to
 `false`. How often a run reaches a proven fix at all has not been measured. It
 proposes and never merges.
 
+**The Action has two modes, and the one above is the expensive half.**
+`mode: investigate` is what everything on this page describes: a labelled
+report, a checkout, a container, and -- with a key -- a model. `mode: triage`
+reads a newly opened issue and either asks for the one thing that would make it
+runnable or says nothing at all, which is the right answer about half the time.
+It runs no repository code, starts no container, makes no model call and needs
+no API key, and it is the half a licence is metered against. `open-pull-request`
+is about `investigate`; there is nothing for triage to deliver.
+
 This package is the typed TypeScript client and React hooks for the engine's
 HTTP API — one method per route, and no method without one. The routes it wraps
 are documented at [api.credda.io/reference](https://api.credda.io/reference).
