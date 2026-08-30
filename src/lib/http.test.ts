@@ -85,7 +85,7 @@ describe('Transport headers', () => {
 
 describe('Transport.get', () => {
   it('returns the parsed body and hits the composed URL', async () => {
-    const fetchImpl = vi.fn(async () => json(200, { ok: true }));
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => json(200, { ok: true }));
     const transport = new Transport({ baseUrl: 'http://x/', apiKey: 'k', fetch: fetchImpl as never });
     await expect(transport.get('/api/investigations?limit=1')).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -162,7 +162,7 @@ describe('Transport.post', () => {
     // `post` has no idempotency-key parameter, so nothing it sends can be
     // deduplicated and a repeat of a create would open a second investigation
     // into the same report. `postIdempotent` is the retrying write.
-    const fetchImpl = vi.fn(async () => json(502, {}));
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => json(502, {}));
     const transport = new Transport({ baseUrl: 'http://x', apiKey: 'k', retries: 5, retryBaseMs: 0, fetch: fetchImpl as never });
     await expect(transport.post('/api/investigations', { issueTitle: 'x' })).rejects.toMatchObject({ status: 502 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -176,7 +176,7 @@ describe('Transport.post', () => {
 
 describe('Transport.postIdempotent', () => {
   it('sends the key as a header and returns the status alongside the body', async () => {
-    const fetchImpl = vi.fn(async () => json(201, { investigation: { id: 'inv_1' } }));
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => json(201, { investigation: { id: 'inv_1' } }));
     const transport = new Transport({ baseUrl: 'http://x', apiKey: 'k', fetch: fetchImpl as never });
     const result = await transport.postIdempotent('/api/investigations', { issueTitle: 'x' }, 'key-1' as never);
     expect(result.status).toBe(201);

@@ -82,7 +82,7 @@ describe('streamSse', () => {
     new Transport({ baseUrl: 'http://x', apiKey: 'k', fetch: fetchImpl as never });
 
   it('yields parsed events and opens the stream at the requested cursor', async () => {
-    const fetchImpl = vi.fn(async () =>
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) =>
       sseResponse([frame(4, 'A', { sequence: 4 }), frame(5, 'B', { sequence: 5 })]),
     );
     const received: Array<{ sequence: number }> = [];
@@ -111,7 +111,7 @@ describe('streamSse', () => {
     // The server drops a stream that has carried nothing for five minutes; a
     // resume must not replay what the consumer already has.
     let call = 0;
-    const fetchImpl = vi.fn(async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => {
       call += 1;
       if (call === 1) return sseResponse([frame(11, 'A', { sequence: 11 })]);
       return sseResponse([frame(12, 'B', { sequence: 12 })]);
@@ -155,7 +155,7 @@ describe('streamSse', () => {
 
   it('reconnects after an idle frame, because the run has not finished', async () => {
     let call = 0;
-    const fetchImpl = vi.fn(async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => {
       call += 1;
       if (call === 1) {
         return sseResponse([
