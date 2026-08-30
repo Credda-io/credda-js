@@ -316,6 +316,7 @@ export default function App() {
 | `useResolution(investigationId)` | the latest resolution record, or `null` |
 | `useValidation(id)` | one validation run |
 | `useValidationEvents(id, opts)` | its live timeline (SSE) |
+| `useCreddaClient()` | the `CreddaClient` the provider holds, for a call no hook wraps |
 
 ## The event stream is SSE, and is read with `fetch`
 

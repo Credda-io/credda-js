@@ -221,3 +221,78 @@ describe('the client surface', () => {
     expect(Object.keys(headless)).not.toContain('useInvestigation');
   });
 });
+
+/**
+ * The export surface of the two entry points, which nothing held.
+ *
+ * WHY THIS EXISTS. Everything above is about `CreddaClient.prototype` and the
+ * routes behind it. What a caller actually writes is `import { … } from
+ * '@credda/js'`, and that list was checked by seven `typeof` spot-checks and a
+ * denylist of retired trust-era names -- both of which pass with an export
+ * missing.
+ *
+ * MEASURED 2026-08-30: deleting `idempotencyKey` and `newIdempotencyKey` from
+ * `headless.ts`, and `useValidationEvents` from `index.ts`, left all 130 tests
+ * passing. Every one of those is a documented public export; the second is the
+ * only way to mint a key at all, and losing it silently would leave a caller
+ * with no way to make a create retryable.
+ *
+ * Type-only exports are not visible at runtime and are not checked here; `tsc`
+ * is what holds those.
+ */
+describe('the package export surface', () => {
+  const HEADLESS_EXPORTS = [
+    'CreddaClient',
+    'CreddaError',
+    'IDEMPOTENCY_HEADER',
+    'IdempotentCreate',
+    'SseDecoder',
+    'Transport',
+    'idempotencyKey',
+    'idempotentCreate',
+    'isRetryableStatus',
+    'newIdempotencyKey',
+    'queryString',
+    'streamSse',
+  ];
+
+  /** What the root entry adds. Everything here needs React. */
+  const REACT_EXPORTS = [
+    'CreddaProvider',
+    'useCreddaClient',
+    'useInvestigation',
+    'useInvestigationEvents',
+    'useInvestigations',
+    'useResolution',
+    'useValidation',
+    'useValidationEvents',
+  ];
+
+  it('is exactly this list on the headless entry', () => {
+    expect(Object.keys(headless).sort()).toEqual(HEADLESS_EXPORTS.slice().sort());
+  });
+
+  it('is the headless entry plus React, and nothing else, on the root entry', async () => {
+    const root = await import('../index.js');
+    expect(Object.keys(root).sort()).toEqual([...HEADLESS_EXPORTS, ...REACT_EXPORTS].sort());
+  });
+
+  /**
+   * And the hooks table in the README is that list, both ways. `CreddaProvider`
+   * is documented in prose and in the example above the table rather than as a
+   * row, so it is named here as the one exception; every other React export has
+   * to be a row.
+   */
+  it('documents every hook it exports, and exports every hook it documents', () => {
+    const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+    const table = /^\| Hook \| What it reads \|\n\|[^\n]*\|\n((?:\|[^\n]*\|\n)+)/m.exec(readme);
+    expect(table, 'no `| Hook | What it reads |` table was found in README.md').not.toBeNull();
+
+    const documented = [...(table?.[1] ?? '').matchAll(/^\|\s*`(use[A-Za-z0-9]*)\(/gm)]
+      .map((match) => match[1] as string)
+      .sort();
+    expect(documented.length, 'no hook rows were found, so this checked nothing').toBeGreaterThan(4);
+    expect(documented).toEqual(REACT_EXPORTS.filter((name) => name.startsWith('use')).sort());
+    expect(readme).toContain('CreddaProvider');
+  });
+});
