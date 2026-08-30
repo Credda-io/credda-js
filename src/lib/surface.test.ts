@@ -175,6 +175,10 @@ describe('the client surface', () => {
   it('keeps React out of the headless entry', () => {
     // The whole point of the second entry point: a Node service that installs
     // no React must not fail on `Cannot find package 'react'`.
+    //
+    // This checks export NAMES, which is the narrower half: a module can import
+    // React and export nothing from it. `src/headlessIsolation.test.ts` walks
+    // the module graph and is what actually holds the promise.
     expect(Object.keys(headless)).not.toContain('CreddaProvider');
     expect(Object.keys(headless)).not.toContain('useInvestigation');
   });
