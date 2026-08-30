@@ -19,8 +19,16 @@ export type {
   PageQuery,
 } from './lib/client.js';
 
-export { Transport, queryString } from './lib/http.js';
+export { IDEMPOTENCY_HEADER, Transport, queryString } from './lib/http.js';
 export type { CreddaConfig, QueryValue, RequestOptions } from './lib/http.js';
+
+/**
+ * Idempotent creates. `idempotentCreate` pairs a report with a key and is the
+ * only thing `createInvestigationOnce` accepts; the key is minted for you there
+ * unless you pass one you already recorded.
+ */
+export { IdempotentCreate, idempotencyKey, idempotentCreate, newIdempotencyKey } from './lib/idempotency.js';
+export type { IdempotencyKey } from './lib/idempotency.js';
 
 export { CreddaError, isRetryableStatus } from './lib/errors.js';
 export type { CreddaErrorCode, CreddaErrorContext } from './lib/errors.js';

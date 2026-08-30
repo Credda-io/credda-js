@@ -4,7 +4,9 @@
  * One method per route in `apps/api/src/routes/`, and no method that is not one.
  * The surface is almost entirely read: the engine is driven by the worker and
  * the CLI, and the API accepts exactly two writes. `POST /api/investigations`
- * opens one, which is a row in `CREATED` — the run itself starts elsewhere. And
+ * opens one, which is a row in `CREATED` — the run itself starts elsewhere, and
+ * an `Idempotency-Key` makes sending it twice safe; see
+ * {@link CreddaClient.createInvestigationOnce}. And
  * `POST /api/investigations/{id}/cancel` stops one, and says whether it
  * actually stopped it or only asked; see {@link CreddaClient.cancelInvestigation}.
  *
@@ -22,6 +24,7 @@
 
 import { Transport, queryString } from './http.js';
 import type { CreddaConfig, RequestOptions } from './http.js';
+import type { IdempotentCreate } from './idempotency.js';
 import { streamSse } from './stream.js';
 import type { StreamOptions } from './stream.js';
 import type {
@@ -35,6 +38,7 @@ import type {
   Health,
   InvestigationDetail,
   InvestigationEvent,
+  InvestigationCreation,
   InvestigationEventPage,
   InvestigationListPage,
   InvestigationOutcome,
@@ -141,6 +145,15 @@ export interface ListResolutionsQuery extends PageQuery {
 
 /** The body of `POST /api/investigations`. Every field is one `createBody` accepts. */
 export interface CreateInvestigationInput {
+  /**
+   * There is no key field on the body, and this one exists to say so with the
+   * compiler rather than a comment. The engine reads the key from an
+   * `Idempotency-Key` HEADER, and `createBody` is `.strict()`, so a key set
+   * here would be a 400 naming it. Pair a key with a body through
+   * `idempotentCreate` and send it with
+   * {@link CreddaClient.createInvestigationOnce}.
+   */
+  idempotencyKey?: never;
   repositoryId: string;
   /** 1–500 characters. */
   issueTitle: string;
@@ -196,14 +209,68 @@ export class CreddaClient {
    * the API does not run the engine. What advances it is the worker, and what a
    * caller watches it with is {@link streamInvestigation}.
    *
-   * Never retried, whatever `retries` is set to: there is no idempotency key on
-   * this route, so a repeat opens a second investigation into the same report.
+   * Sends no `Idempotency-Key` and is never retried, whatever `retries` is set
+   * to. Without that header the route behaves exactly as it did before the
+   * header existed — one run per request — so a repeat of this call opens, and
+   * bills for, a second investigation into the same report. That is the right
+   * default for a caller who has not said the two requests are one intent, and
+   * it is not the call to make from a job queue that will retry you: use
+   * {@link createInvestigationOnce}.
    */
   createInvestigation(
     input: CreateInvestigationInput,
     options: RequestOptions = {},
   ): Promise<InvestigationDetail> {
     return this.transport.post('/api/investigations', input, options);
+  }
+
+  /**
+   * Opens an investigation under an idempotency key — the one write on this
+   * client that `retries` will repeat.
+   *
+   * Running an investigation spends a model budget, so a create that is sent
+   * twice because a socket died is a second bill. The engine's create route
+   * reads an `Idempotency-Key` and returns the run the first request under that
+   * key created, with 200 instead of 201, so repeating this call is
+   * exactly-once at the server and retrying it is safe.
+   *
+   * ```ts
+   * const claim = idempotentCreate({ repositoryId, issueTitle, issueBody });
+   * await jobs.record(ticketId, claim.key);   // so a restart sends the same key
+   * const created = await credda.createInvestigationOnce(claim);
+   * if (created.status === 'CREATED') {
+   *   budget.commit(created.investigation.investigation.id);   // a run just opened
+   * }
+   * // 'REPLAYED' — an earlier attempt of ours got through. Nothing was created
+   * // here and nothing was billed.
+   * ```
+   *
+   * The key and the body arrive together, in one frozen value made by
+   * `idempotentCreate`, because the engine's other answer is a refusal: the
+   * same key over a DIFFERENT body is a 409 `IDEMPOTENCY_KEY_REUSED`
+   * {@link CreddaError}, disclosing neither run. Making the pair as a unit is
+   * what keeps a key from drifting onto a report it was not minted for; there
+   * is no overload here that takes the two separately.
+   *
+   * The claim is scoped to the organisation the API key names and never
+   * expires. It is deleted when the investigation is.
+   */
+  async createInvestigationOnce(
+    claim: IdempotentCreate,
+    options: RequestOptions = {},
+  ): Promise<InvestigationCreation> {
+    const { status, body } = await this.transport.postIdempotent<InvestigationDetail>(
+      '/api/investigations',
+      claim.input,
+      claim.key,
+      options,
+    );
+    // 201 is the run this request opened; every other success on this route is
+    // the engine handing back one it already had. Read off the status line
+    // because the two bodies are identical.
+    return status === 201
+      ? { status: 'CREATED', key: claim.key, investigation: body }
+      : { status: 'REPLAYED', key: claim.key, investigation: body };
   }
 
   /**
@@ -235,7 +302,9 @@ export class CreddaClient {
    *
    * Repeating the call is safe: an already-cancelled run answers 200
    * `ALREADY_CANCELLED` rather than an error. It is still not retried
-   * automatically, because {@link Transport.post} retries nothing.
+   * automatically — it goes through {@link Transport.post}, which carries no
+   * idempotency key and retries nothing — because a repeat that crosses a
+   * worker's heartbeat answers a different status than the attempt it replaced.
    */
   cancelInvestigation(id: string, input: CancelInvestigationInput = {}): Promise<Cancellation> {
     const { reason, ...options } = input;

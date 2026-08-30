@@ -89,11 +89,30 @@ const CLIENT_METHODS: Readonly<Record<string, string | null>> = {
   'GET /api/organization/keys': 'listApiKeys',
 };
 
+/**
+ * The one route served by a SECOND method, and the reason it is two and not one.
+ *
+ * `POST /api/investigations` answers differently depending on whether an
+ * `Idempotency-Key` was sent -- 201 for a run it opened, 200 for one it is
+ * handing back -- and the two are different calls to make. `createInvestigation`
+ * sends no key and is never retried; `createInvestigationOnce` takes a key
+ * bound to its body, is retried, and returns the CREATED/REPLAYED distinction.
+ * Collapsing them into one method with an optional key is exactly the shape
+ * that lets a retry be configured without one.
+ *
+ * Listed here rather than tolerated by loosening the assertion below: a second
+ * method on any other route still fails, and by name.
+ */
+const SECOND_METHODS: Readonly<Record<string, string>> = {
+  'POST /api/investigations': 'createInvestigationOnce',
+};
+
 const KEYS = surface.routes.map((route) => `${route.method} ${route.path}`);
 
-const ROUTED_METHODS = KEYS.map((key) => CLIENT_METHODS[key])
-  .filter((name): name is string => typeof name === 'string')
-  .sort();
+const ROUTED_METHODS = [
+  ...KEYS.map((key) => CLIENT_METHODS[key]).filter((name): name is string => typeof name === 'string'),
+  ...Object.values(SECOND_METHODS),
+].sort();
 
 describe('the client surface', () => {
   it('holds a route surface that has not been edited by hand', () => {
@@ -112,6 +131,8 @@ describe('the client surface', () => {
     expect(KEYS.filter((key) => CLIENT_METHODS[key] === null)).toEqual(['GET /openapi.json']);
     // A method may not serve two routes.
     expect(new Set(ROUTED_METHODS).size).toBe(ROUTED_METHODS.length);
+    // A second method is allowed only on a route that has a stated reason.
+    expect(Object.keys(SECOND_METHODS).filter((key) => !KEYS.includes(key))).toEqual([]);
   });
 
   it('is exactly one method per route, and no method without one', () => {

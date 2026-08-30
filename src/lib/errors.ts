@@ -40,6 +40,14 @@ export type CreddaErrorCode =
   | 'ALREADY_FINISHED'
   /** 409, cancel route only: the run is executing outside the job queue. */
   | 'NOT_CANCELLABLE'
+  /**
+   * 409, create route only: the `Idempotency-Key` on the request already stands
+   * for a DIFFERENT body. Neither run is disclosed — the earlier one would
+   * answer a question this caller never asked, and a new one is the duplicate
+   * the key was sent to prevent. Mint a new key for a new report; see
+   * `idempotentCreate`.
+   */
+  | 'IDEMPOTENCY_KEY_REUSED'
   | 'PAYLOAD_TOO_LARGE'
   | 'UNAVAILABLE'
   | 'TOO_MANY_STREAMS'

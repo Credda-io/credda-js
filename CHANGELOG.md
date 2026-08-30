@@ -62,7 +62,7 @@ A typed client over the Credda engine API — one method per route in
 `apps/api/src/routes/`, and no method without one:
 
 - **Investigations**: `listInvestigations`, `createInvestigation`,
-  `cancelInvestigation`, `getInvestigation`, `listInvestigationEvents`,
+  `createInvestigationOnce`, `cancelInvestigation`, `getInvestigation`, `listInvestigationEvents`,
   `listInvestigationEvidence`, `streamInvestigation`.
 - **Validations**: `listValidations`, `getValidation`, `listValidationChecks`,
   `listFindings`, `listValidationEvidence`, `listValidationEvents`,
@@ -98,7 +98,24 @@ repository and still spending a model budget. So `Cancellation` is
 `ALREADY_FINISHED` and `NOT_CANCELLABLE` — are thrown as `CreddaError`, because
 neither stopped anything.
 
-`CreddaErrorCode` gains `ALREADY_FINISHED` and `NOT_CANCELLABLE`.
+`createInvestigationOnce` sends an **`Idempotency-Key`** and is the one write
+this client retries. Opening an investigation commits a model budget, so a
+create repeated because a socket died is a second bill. Under a key the engine
+returns the run the first request opened, with 200 instead of 201; the same key
+over a *different* body is a 409 `IDEMPOTENCY_KEY_REUSED` disclosing neither
+run. The result is a union — `CREATED` means this call opened the run,
+`REPLAYED` means an earlier one did and nothing was billed — because the two
+bodies are identical and only the status line separates them.
+
+The key is the caller's, never invented on their behalf. `idempotentCreate`
+mints one and freezes it to the body it was minted for, so a key cannot drift
+onto a report it does not stand for, and `Transport.postIdempotent` takes the
+key as a required parameter, so "retried" and "carries a key" cannot come apart.
+`createInvestigation` sends no key, is never retried, and behaves exactly as the
+route did before the header existed.
+
+`CreddaErrorCode` gains `ALREADY_FINISHED`, `NOT_CANCELLABLE` and
+`IDEMPOTENCY_KEY_REUSED`.
 
 ### Changed
 

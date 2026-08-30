@@ -106,6 +106,7 @@ used to be accepted and ignored.
 | --- | --- |
 | `listInvestigations({ repository, signalId, state, outcome, limit, offset })` | `GET /api/investigations` |
 | `createInvestigation({ repositoryId, issueTitle, issueBody, issueRef? })` | `POST /api/investigations` |
+| `createInvestigationOnce(idempotentCreate({ … }))` | `POST /api/investigations` with `Idempotency-Key` |
 | `cancelInvestigation(id, { reason? })` | `POST /api/investigations/:id/cancel` |
 | `getInvestigation(id)` | `GET /api/investigations/:id` |
 | `listInvestigationEvents(id, { since, limit, includeDebug })` | `GET /api/investigations/:id/events` |
@@ -115,6 +116,46 @@ used to be accepted and ignored.
 `createInvestigation` creates the row in state `CREATED` and returns. **It does
 not start the run** — the API does not execute anything; the worker does. What
 you watch it with is the event stream.
+
+#### Creating a run twice by accident costs money
+
+Opening an investigation commits a model budget, so a create that is sent again
+because a socket died is a second bill. The route reads an **`Idempotency-Key`**
+header and, under the same key:
+
+| | HTTP | What is true |
+| --- | --- | --- |
+| First request | 201 `CREATED` | A run was opened. |
+| The same body again | 200 `REPLAYED` | The same run, returned again. **Nothing was created and nothing was billed.** |
+| A **different** body | 409 `IDEMPOTENCY_KEY_REUSED` | Refused, and neither run is disclosed. Mint a new key for a new report. |
+| No header at all | 201 | Exactly the old behaviour: one run per request. |
+
+The claim is scoped to your organisation and never expires; it is deleted with
+the investigation.
+
+```ts
+import { idempotentCreate } from '@credda/js/headless';
+
+const claim = idempotentCreate({ repositoryId, issueTitle, issueBody });
+await jobs.record(ticketId, claim.key);   // so a restart sends the same key
+
+const created = await credda.createInvestigationOnce(claim);
+if (created.status === 'CREATED') {
+  // This call opened the run.
+} else {
+  // 'REPLAYED' — an earlier attempt of ours got through. Nothing was billed.
+}
+```
+
+`idempotentCreate` mints the key and freezes it to that body. **The client never
+mints one for you behind a plain `createInvestigation`**: a key says "these
+requests are one intent", the engine's own handler is explicit that only the
+caller can know that — re-running a report against a non-deterministic engine is
+a real thing to want, and a body-derived key would make it impossible — and a
+key this library invented per call could not be sent again by the process that
+crashed and restarted, which is the case that actually double-bills.
+`createInvestigation` therefore sends no key and is never retried;
+`createInvestigationOnce` is the only write this client will repeat.
 
 `cancelInvestigation` answers with what it **achieved**, and the two successful
 answers do not mean the same thing. Narrow on `status` before you show anything
@@ -306,22 +347,27 @@ try {
 
 Codes the API can send today: `INVALID_REQUEST`, `VALIDATION_FAILED`,
 `UNAUTHENTICATED`, `NOT_FOUND`, `NO_ORGANIZATION`, `ALREADY_FINISHED`,
-`NOT_CANCELLABLE`, `PAYLOAD_TOO_LARGE`, `TOO_MANY_STREAMS`, `INTERNAL_ERROR`.
-`ALREADY_FINISHED` and `NOT_CANCELLABLE` are the cancel route's, and appear
-nowhere else. The type union also carries `UNAVAILABLE`, which no response can
+`NOT_CANCELLABLE`, `IDEMPOTENCY_KEY_REUSED`, `PAYLOAD_TOO_LARGE`,
+`TOO_MANY_STREAMS`, `INTERNAL_ERROR`. `ALREADY_FINISHED` and `NOT_CANCELLABLE`
+are the cancel route's and `IDEMPOTENCY_KEY_REUSED` is the create route's, and
+they appear nowhere else. The type union also carries `UNAVAILABLE`, which no response can
 actually carry — it is a default every call site overrides — and it is listed in
 the type only so that removing an exported member does not break a build.
 
 Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
-re-attempts network errors and 502/504 on GETs with exponential backoff. `429`
-is not on that list because nothing in the API rate limits. Neither write is
-ever retried whatever you set. `createInvestigation` defines no idempotency key,
-so a repeat would open a second investigation into the same report;
+re-attempts network errors and 502/504 with exponential backoff. `429` is not on
+that list because nothing in the API rate limits.
+
+Every GET is retried, and exactly one write: `createInvestigationOnce`, which
+carries an `Idempotency-Key` the engine deduplicates against, so a repeat
+returns the run the first attempt opened rather than opening a second.
+`createInvestigation` sends no key and is never retried, whatever you set — a
+repeat would open, and bill for, a second investigation into the same report.
 `cancelInvestigation` is idempotent at the server, but a repeat that crosses a
 worker's heartbeat answers a different status than the attempt it replaced, and
 a retry that swallowed that would hand back "cancelled" for a call that was told
-"requested". `getHealth` is
-never retried either: a degraded database does not recover by being asked twice.
+"requested". `getHealth` is never retried either: a degraded database does not
+recover by being asked twice.
 
 ## Status of the fix path
 

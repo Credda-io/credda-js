@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CreddaClient } from './client.js';
+import { idempotencyKey, idempotentCreate, newIdempotencyKey } from './idempotency.js';
 
 /**
  * A fetch double that records every call and answers with a fixed JSON body.
@@ -79,6 +80,100 @@ describe('investigations', () => {
     const result = await clientWith(stub(page)).listInvestigations({ limit: 1 });
     expect(result.total).toBe(91);
     expect(result.investigations).toHaveLength(1);
+  });
+
+  it('sends no idempotency key on the plain create, so the route behaves as it always did', async () => {
+    const fetchImpl = stub({ investigation: { id: 'inv_1', state: 'CREATED' } }, 201);
+    await clientWith(fetchImpl).createInvestigation({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' });
+    expect((initOf(fetchImpl).headers as Record<string, string>)['Idempotency-Key']).toBeUndefined();
+  });
+
+  it('sends the key as a header and never on the body, which createBody would refuse', async () => {
+    const fetchImpl = stub({ investigation: { id: 'inv_1', state: 'CREATED' } }, 201);
+    const key = idempotencyKey('claim-42');
+    const claim = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' }, key);
+    await clientWith(fetchImpl).createInvestigationOnce(claim);
+    const init = initOf(fetchImpl);
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('claim-42');
+    expect(JSON.parse(String(init.body))).toEqual({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' });
+  });
+
+  it('reads CREATED off the 201 and REPLAYED off the 200, because the bodies are identical', async () => {
+    const body = { investigation: { id: 'inv_1', state: 'CREATED' } };
+    const claim = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' });
+
+    const first = await clientWith(stub(body, 201)).createInvestigationOnce(claim);
+    expect(first.status).toBe('CREATED');
+    expect(first.key).toBe(claim.key);
+    expect(first.investigation).toEqual(body);
+
+    const replay = await clientWith(stub(body, 200)).createInvestigationOnce(claim);
+    expect(replay.status).toBe('REPLAYED');
+    expect(replay.investigation).toEqual(body);
+  });
+
+  it('is retried under a key, and the replay means exactly one run was opened', async () => {
+    const body = { investigation: { id: 'inv_1', state: 'CREATED' } };
+    let call = 0;
+    // The first attempt reaches the engine, opens the run, and the response is
+    // lost on the way back. The retry carries the same key, so the engine hands
+    // back that same run with a 200 rather than opening a second.
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 1) throw new TypeError('network error');
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const client = new CreddaClient({
+      baseUrl: 'https://engine.example.com',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    const result = await client.createInvestigationOnce(
+      idempotentCreate({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe('REPLAYED');
+    expect(result.investigation).toEqual(body);
+  });
+
+  it('never retries the keyless create, whatever retries is set to', async () => {
+    const fetchImpl = stub({ error: { code: 'UNAVAILABLE', message: 'not now' } }, 503);
+    const client = new CreddaClient({
+      baseUrl: 'https://engine.example.com',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    await expect(
+      client.createInvestigation({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the reused-key refusal as a 409 rather than a run the caller did not ask for', async () => {
+    const fetchImpl = stub({ error: { code: 'IDEMPOTENCY_KEY_REUSED', message: 'already used' } }, 409);
+    await expect(
+      clientWith(fetchImpl).createInvestigationOnce(
+        idempotentCreate({ repositoryId: 'repo_1', issueTitle: 'other', issueBody: 'b' }),
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('binds a key to one body: a new report gets a new key rather than reusing the old one', async () => {
+    const first = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 'one', issueBody: 'b' });
+    const second = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 'two', issueBody: 'b' });
+    expect(second.key).not.toBe(first.key);
+    // The pair is frozen, so the body under a key cannot be edited in place.
+    expect(Object.isFrozen(first)).toBe(true);
+  });
+
+  it('refuses a key the engine would refuse, without spending a request to find out', () => {
+    expect(() => idempotencyKey('')).toThrow(TypeError);
+    expect(() => idempotencyKey('k'.repeat(256))).toThrow(TypeError);
+    expect(idempotencyKey('k'.repeat(255))).toHaveLength(255);
+    expect(newIdempotencyKey()).not.toBe(newIdempotencyKey());
   });
 
   it('opens one with a POST carrying exactly the fields createBody accepts', async () => {

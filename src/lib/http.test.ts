@@ -140,8 +140,9 @@ describe('Transport retries', () => {
 
 describe('Transport.post', () => {
   it('sends JSON with the content type and is never retried', async () => {
-    // No idempotency key exists on this API, so a repeat would open a second
-    // investigation into the same report.
+    // `post` has no idempotency-key parameter, so nothing it sends can be
+    // deduplicated and a repeat of a create would open a second investigation
+    // into the same report. `postIdempotent` is the retrying write.
     const fetchImpl = vi.fn(async () => json(502, {}));
     const transport = new Transport({ baseUrl: 'http://x', apiKey: 'k', retries: 5, retryBaseMs: 0, fetch: fetchImpl as never });
     await expect(transport.post('/api/investigations', { issueTitle: 'x' })).rejects.toMatchObject({ status: 502 });
@@ -151,6 +152,45 @@ describe('Transport.post', () => {
     expect(init.body).toBe('{"issueTitle":"x"}');
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer k');
+  });
+});
+
+describe('Transport.postIdempotent', () => {
+  it('sends the key as a header and returns the status alongside the body', async () => {
+    const fetchImpl = vi.fn(async () => json(201, { investigation: { id: 'inv_1' } }));
+    const transport = new Transport({ baseUrl: 'http://x', apiKey: 'k', fetch: fetchImpl as never });
+    const result = await transport.postIdempotent('/api/investigations', { issueTitle: 'x' }, 'key-1' as never);
+    expect(result.status).toBe(201);
+    expect(result.body).toEqual({ investigation: { id: 'inv_1' } });
+    const init = fetchImpl.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('key-1');
+  });
+
+  it('is retried, because the key makes a repeat exactly-once at the server', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      return call < 3 ? json(502, {}) : json(200, { investigation: { id: 'inv_1' } });
+    });
+    const transport = new Transport({
+      baseUrl: 'http://x',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    const result = await transport.postIdempotent('/api/investigations', {}, 'key-1' as never);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result.status).toBe(200);
+  });
+
+  it('does not retry the reused-key refusal, which is an answer and not a blip', async () => {
+    const fetchImpl = vi.fn(async () => json(409, envelope('IDEMPOTENCY_KEY_REUSED', 'already used')));
+    const transport = new Transport({ baseUrl: 'http://x', retries: 3, retryBaseMs: 0, fetch: fetchImpl as never });
+    await expect(transport.postIdempotent('/api/investigations', {}, 'key-1' as never)).rejects.toMatchObject({
+      status: 409,
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
 

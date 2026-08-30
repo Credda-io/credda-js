@@ -7,7 +7,14 @@
  * `packages/memory`. Nothing is added. A field a serializer does not write does
  * not appear here, because a typed client that promises a field the server
  * never sends is a lie the compiler helps tell.
+ *
+ * {@link InvestigationCreation} is the one exception and says so: it is
+ * assembled by this client out of a response BODY and its status line, because
+ * the create route distinguishes 201 from 200 and writes nothing in the body
+ * that tells them apart.
  */
+
+import type { IdempotencyKey } from './idempotency.js';
 
 // ─── Vocabularies ────────────────────────────────────────────────────────────
 
@@ -429,7 +436,7 @@ export interface InvestigationEvent {
   createdAt: string;
 }
 
-/** The body of `GET /api/investigations/:id` and of a 201 from `POST /api/investigations`. */
+/** The body of `GET /api/investigations/:id` and of `POST /api/investigations`. */
 export interface InvestigationDetail {
   investigation: Investigation;
   hypotheses: Hypothesis[];
@@ -437,6 +444,47 @@ export interface InvestigationDetail {
   verifications: VerificationRun[];
   evidenceCount: number;
   latestSequence: number;
+}
+
+/**
+ * The result of `createInvestigationOnce`: the run, and whether THIS call is
+ * what opened it.
+ *
+ * A UNION for the reason {@link Cancellation} is one. The engine answers the
+ * create route with 201 when the key was new and 200 when it is handing back
+ * the run an earlier request under that key already created, and the body is
+ * identical either way — so the status is the only thing that says whether a
+ * model budget was just committed. A single record with a boolean would let a
+ * caller read one as the other, and a shape that dropped the distinction
+ * entirely would make every retried create look like a fresh run in whatever
+ * the caller writes to their own ledger.
+ *
+ * Narrow on `status`. `CREATED` means this call opened the run. `REPLAYED`
+ * means an earlier request under the same key did, nothing was created here,
+ * and nothing was billed.
+ *
+ * The mismatch is not a member: the same key over a different body is a 409
+ * `IDEMPOTENCY_KEY_REUSED` {@link CreddaError}, because it neither created nor
+ * replayed anything.
+ */
+export type InvestigationCreation = InvestigationCreated | InvestigationReplayed;
+
+/** This call opened the run. See {@link InvestigationCreation}. */
+export interface InvestigationCreated {
+  status: 'CREATED';
+  /** The key this run is claimed under. Hold it: sending it again replays. */
+  key: IdempotencyKey;
+  investigation: InvestigationDetail;
+}
+
+/**
+ * An earlier request under this key opened the run; this one created nothing.
+ * See {@link InvestigationCreation}.
+ */
+export interface InvestigationReplayed {
+  status: 'REPLAYED';
+  key: IdempotencyKey;
+  investigation: InvestigationDetail;
 }
 
 /**
