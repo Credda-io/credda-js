@@ -1,7 +1,6 @@
 node_modules/
 dist/
 *.log
-package-lock.json
 
 # Never commit local environment files. A GOOGLE_CLIENT_SECRET reached this
 # tree in cleartext on 2026-05-02 because a repo had no rule like this one,
