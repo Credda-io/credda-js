@@ -1,10 +1,10 @@
 /**
  * `@credda/js` — the typed client and React hooks for the Credda engine API.
  *
- * Credda finds defects and vulnerabilities in a company's production and QA
- * environments, reproduces them, diagnoses the cause, and — see the README's
- * status table for what the API serves today — is built to open a pull request
- * with the fix. This package reads that engine.
+ * A customer labels a defect or vulnerability; Credda reproduces it, diagnoses
+ * the cause, and — see the README's status table for what the API serves
+ * today — writes the patch and the test that proves it. Delivering that as a
+ * pull request is opt-in and off by default. This package reads that engine.
  *
  * Everything in `@credda/js/headless` is re-exported here, plus the provider
  * and hooks, which need React.

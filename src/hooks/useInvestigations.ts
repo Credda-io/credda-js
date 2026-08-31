@@ -23,7 +23,7 @@ export function useInvestigations(
   query: Omit<ListInvestigationsQuery, 'signal'> = {},
 ): UseInvestigationsResult {
   const client = useCreddaClient();
-  const { state, limit, offset } = query;
+  const { repository, state, outcome, limit, offset } = query;
   const [investigations, setInvestigations] = useState<InvestigationSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -39,7 +39,7 @@ export function useInvestigations(
     setError(null);
 
     client
-      .listInvestigations({ state, limit, offset, signal: controller.signal })
+      .listInvestigations({ repository, state, outcome, limit, offset, signal: controller.signal })
       .then((page) => {
         if (cancelled) return;
         setInvestigations(page.investigations);
@@ -57,7 +57,7 @@ export function useInvestigations(
       cancelled = true;
       controller.abort();
     };
-  }, [client, state, limit, offset, nonce]);
+  }, [client, repository, state, outcome, limit, offset, nonce]);
 
   return { investigations, total, loading, error, refetch };
 }

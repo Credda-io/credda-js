@@ -7,17 +7,30 @@
  * `packages/memory`. Nothing is added. A field a serializer does not write does
  * not appear here, because a typed client that promises a field the server
  * never sends is a lie the compiler helps tell.
+ *
+ * {@link InvestigationCreation} is the one exception and says so: it is
+ * assembled by this client out of a response BODY and its status line, because
+ * the create route distinguishes 201 from 200 and writes nothing in the body
+ * that tells them apart.
  */
+
+import type { IdempotencyKey } from './idempotency.js';
 
 // ─── Vocabularies ────────────────────────────────────────────────────────────
 
 /**
  * `packages/shared/src/states.ts` — INVESTIGATION_STATES.
  *
- * The patch-path states (`GENERATING_PATCH`, `VERIFYING` and the rest) are
- * absent because they are absent from that array today, not because Credda
- * does not fix things: ADR 0018 makes the fix the product and lists restoring
- * them as step 1. This union gains members when that array does.
+ * This union said, until 2026-08-29, that the patch-path states were absent
+ * because they were absent from that array, and promised to gain members when
+ * that array did. The array gained them on 2026-08-27, when ADR 0019 put the
+ * Fix and Verify stages back on the investigation path, and this union did not
+ * follow. `apps/api/src/serialize.ts` writes `state` straight through as a
+ * string, so a run that reaches `READY_FOR_REVIEW` has been arriving as a value
+ * this type says cannot exist — and `listInvestigations` would not let a caller
+ * filter for one.
+ *
+ * `REPORT_REFUTED` (ADR 0020) was missing for the same reason and is here too.
  */
 export type InvestigationState =
   | 'CREATED'
@@ -33,15 +46,33 @@ export type InvestigationState =
   | 'REPRODUCED_NOT_DIAGNOSED'
   | 'CONTRADICTS_SPECIFICATION'
   | 'ISSUE_ALREADY_RESOLVED'
+  | 'REPORT_REFUTED'
   | 'NO_CHANGE_REQUIRED'
   | 'NO_RUNNABLE_CHECK'
   | 'REPRODUCTION_FAILED'
   | 'INSUFFICIENT_EVIDENCE'
+  | 'GENERATING_PATCH'
+  | 'TESTING_PATCH'
+  | 'VERIFYING'
+  | 'VERIFIED'
+  | 'READY_FOR_REVIEW'
+  | 'VERIFICATION_FAILED'
+  | 'PATCH_REJECTED'
   | 'NEEDS_HUMAN_INPUT'
   | 'CANCELLED'
   | 'FAILED';
 
-/** `packages/shared/src/states.ts` — OUTCOMES. Same note as {@link InvestigationState}. */
+/**
+ * `packages/shared/src/states.ts` — OUTCOMES. Same note as
+ * {@link InvestigationState}.
+ *
+ * `VERIFIED`, `PARTIALLY_VERIFIED` and `PATCH_REJECTED` are the three the fix
+ * stage produces. None of them says the change was merged: Credda proposes, and
+ * a human is the merge authority. `PARTIALLY_VERIFIED` is the weaker claim of
+ * the first two — fewer checks stood behind the change, not that the change is
+ * wrong — and `outcomeForState` in `core` returns it when no verdict is given,
+ * because an unknown verdict must never round up.
+ */
 export type InvestigationOutcome =
   | 'REPRODUCED_AND_DIAGNOSED'
   | 'REPRODUCED_NOT_DIAGNOSED'
@@ -49,6 +80,9 @@ export type InvestigationOutcome =
   | 'NO_CHANGE_REQUIRED'
   | 'NO_RUNNABLE_CHECK'
   | 'INCONCLUSIVE'
+  | 'VERIFIED'
+  | 'PARTIALLY_VERIFIED'
+  | 'PATCH_REJECTED'
   | 'CANCELLED'
   | 'ERRORED';
 
@@ -237,6 +271,16 @@ export type LearningKind =
 /** `toInvestigationSummary`. A list row. */
 export interface InvestigationSummary {
   id: string;
+  repositoryId: string;
+  /**
+   * Null only when the repository row is gone; never a stand-in label. Passed
+   * through `toWireSource`, so a local checkout never puts a host path here.
+   *
+   * On the queue row for the reason it is on {@link ValidationSummary}: without
+   * it, "which repository is this" costs one detail request per row, on exactly
+   * the screen that renders every row at once.
+   */
+  repositorySource: string | null;
   issueRef: string | null;
   issueTitle: string;
   state: InvestigationState;
@@ -259,6 +303,12 @@ export interface Investigation {
   issueRef: string | null;
   issueTitle: string;
   issueBody: string;
+  /**
+   * The signal this run was opened from, when it came from one. Null for a
+   * report handed to Credda directly. It is the id the reporting side knows
+   * this defect by, and it is what `listResolutions({ signalId })` looks up.
+   */
+  signalId: string | null;
   state: InvestigationState;
   outcome: InvestigationOutcome | null;
   providerId: string | null;
@@ -341,6 +391,15 @@ export interface FailureSignature {
 export interface Evidence {
   id: string;
   investigationId: string;
+  /**
+   * Set when this row was produced by a validation check rather than by the
+   * investigation directly. A check runs inside an investigation (ADR 0010), so
+   * this list mixes both, and without these two fields a client reading an
+   * investigation's evidence cannot tell which is which. Both null means the
+   * investigation itself recorded the observation.
+   */
+  validationId: string | null;
+  checkId: string | null;
   type: EvidenceType;
   phase: EvidencePhase;
   strength: EvidenceStrength;
@@ -377,7 +436,7 @@ export interface InvestigationEvent {
   createdAt: string;
 }
 
-/** The body of `GET /api/investigations/:id` and of a 201 from `POST /api/investigations`. */
+/** The body of `GET /api/investigations/:id` and of `POST /api/investigations`. */
 export interface InvestigationDetail {
   investigation: Investigation;
   hypotheses: Hypothesis[];
@@ -385,6 +444,105 @@ export interface InvestigationDetail {
   verifications: VerificationRun[];
   evidenceCount: number;
   latestSequence: number;
+}
+
+/**
+ * The result of `createInvestigationOnce`: the run, and whether THIS call is
+ * what opened it.
+ *
+ * A UNION for the reason {@link Cancellation} is one. The engine answers the
+ * create route with 201 when the key was new and 200 when it is handing back
+ * the run an earlier request under that key already created, and the body is
+ * identical either way — so the status is the only thing that says whether a
+ * model budget was just committed. A single record with a boolean would let a
+ * caller read one as the other, and a shape that dropped the distinction
+ * entirely would make every retried create look like a fresh run in whatever
+ * the caller writes to their own ledger.
+ *
+ * Narrow on `status`. `CREATED` means this call opened the run. `REPLAYED`
+ * means an earlier request under the same key did, nothing was created here,
+ * and nothing was billed.
+ *
+ * The mismatch is not a member: the same key over a different body is a 409
+ * `IDEMPOTENCY_KEY_REUSED` {@link CreddaError}, because it neither created nor
+ * replayed anything.
+ */
+export type InvestigationCreation = InvestigationCreated | InvestigationReplayed;
+
+/** This call opened the run. See {@link InvestigationCreation}. */
+export interface InvestigationCreated {
+  status: 'CREATED';
+  /** The key this run is claimed under. Hold it: sending it again replays. */
+  key: IdempotencyKey;
+  investigation: InvestigationDetail;
+}
+
+/**
+ * An earlier request under this key opened the run; this one created nothing.
+ * See {@link InvestigationCreation}.
+ */
+export interface InvestigationReplayed {
+  status: 'REPLAYED';
+  key: IdempotencyKey;
+  investigation: InvestigationDetail;
+}
+
+/**
+ * The body of `POST /api/investigations/{id}/cancel`.
+ *
+ * A UNION, not a record with a boolean, because the route's whole point is that
+ * two of its answers mean different things about the operator's machine and the
+ * operator's bill, and a single shape lets a caller read one as the other.
+ *
+ * `apps/api/src/routes/investigations.ts` answers with what it ACHIEVED:
+ *
+ *   • {@link CancellationStopped} — 200 `CANCELLED` (the job was still queued
+ *     and was refused its claim) or 200 `ALREADY_CANCELLED` (it was cancelled
+ *     before this call). Nothing is running, and `state` is `CANCELLED`.
+ *
+ *   • {@link CancellationRequested} — 202 `CANCELLATION_REQUESTED`. A worker is
+ *     INSIDE the run, holding a sandbox and possibly a model call. The request
+ *     is durable and that worker honours it on its next heartbeat, but the run
+ *     HAS NOT STOPPED and the API has written no terminal state. The run writes
+ *     its own when it lets go; `listInvestigationEvents` and
+ *     `streamInvestigation` are how a caller learns that it did.
+ *
+ * Which is why `state` is typed differently on the two branches: on the
+ * requested branch it excludes `'CANCELLED'`, so `result.state === 'CANCELLED'`
+ * is a true test of "stopped" and cannot be satisfied by a run still going.
+ * Narrow on `status` before rendering anything.
+ *
+ * The two refusals are errors, not members of this union: a run that already
+ * finished is 409 `ALREADY_FINISHED`, and one executing outside the job queue —
+ * a `credda investigate` in somebody else's process — is 409 `NOT_CANCELLABLE`. Both
+ * arrive as a {@link CreddaError}, which is correct: neither stopped anything.
+ */
+export type Cancellation = CancellationStopped | CancellationRequested;
+
+/** Nothing is running. See {@link Cancellation}. */
+export interface CancellationStopped {
+  investigationId: string;
+  /** Re-read from the record after the write, never assumed. */
+  state: 'CANCELLED';
+  /**
+   * `CANCELLED` — this call stopped it. `ALREADY_CANCELLED` — it was already
+   * cancelled, and repeating the request is not an error.
+   */
+  status: 'CANCELLED' | 'ALREADY_CANCELLED';
+}
+
+/**
+ * Recorded, NOT stopped. A worker is still inside the run. See
+ * {@link Cancellation}.
+ */
+export interface CancellationRequested {
+  investigationId: string;
+  /**
+   * The state the run is still in. Never `'CANCELLED'`: the API does not write
+   * that here, the run does, when it lets go.
+   */
+  state: Exclude<InvestigationState, 'CANCELLED'>;
+  status: 'CANCELLATION_REQUESTED';
 }
 
 export interface InvestigationListPage {
@@ -662,6 +820,21 @@ export interface ResolutionSummary {
 }
 
 /**
+ * `packages/shared/src/resolution.ts` — `ResolutionDeclinedReproduction`. One
+ * refusal the reproduction-plan extractor raised while reading the report: a
+ * snippet Credda found and could not honestly turn into a command.
+ *
+ * `source` says where in the report the refusal was raised, which is the one
+ * thing `reason` does not carry. None of the three is a vocabulary: they are
+ * free text written by the engine and by the reporter.
+ */
+export interface DeclinedReproduction {
+  source: string;
+  reason: string;
+  excerpt: string;
+}
+
+/**
  * `toResolution`. The whole record.
  *
  * `rootCause`, `fix` and `verification` are null exactly when the run produced
@@ -711,6 +884,20 @@ export interface Resolution {
     before: string | null;
     after: string | null;
   };
+  /**
+   * Why Credda could not turn parts of the report into a command.
+   *
+   * Null and empty are different answers, and collapsing them reports "Credda
+   * declined no part of this report" about a record that was never asked: null
+   * means the record predates the column and says nothing either way, empty
+   * means the extractor refused nothing.
+   *
+   * A refusal is a fact about Credda's reach. Nothing here may be rendered as a
+   * claim about whether the reported defect exists. `excerpt` is the reporter's
+   * own text, quoted and never interpolated — a client that renders it must
+   * escape it.
+   */
+  declinedReproductions: DeclinedReproduction[] | null;
   confidence: {
     class: ResolutionConfidenceClass;
     /** Empty exactly when the class is `ESTABLISHED`. */

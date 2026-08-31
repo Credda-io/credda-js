@@ -14,7 +14,8 @@ export function useValidationEvents(
   const client = useCreddaClient();
   return useEventStream<ValidationEvent>(
     id,
-    (since, signal, reconnect) => client.streamValidation(id as string, { since, signal, reconnect }),
+    (since, signal, reconnect, onComplete) =>
+      client.streamValidation(id as string, { since, signal, reconnect, onComplete }),
     options,
   );
 }

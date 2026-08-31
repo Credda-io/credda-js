@@ -1,13 +1,11 @@
 <p align="center">
   <a href="https://credda.io">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-lockup-white.png">
-      <img alt="Credda" src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-lockup-black.png" width="480">
-    </picture>
+    <img alt="Credda" width="96" height="96"
+         src="https://raw.githubusercontent.com/Credda-io/credda-js/main/assets/credda-mark-spectrum.png">
   </a>
 </p>
 
-> Source mirror for [`@credda/js`](https://www.npmjs.com/package/@credda/js). Install from npm: `npm install @credda/js`. This repo provides the source and issue tracker; canonical development happens in Credda internal tooling.
+> Source mirror for [`@credda/js`](https://www.npmjs.com/package/@credda/js). **Do not install from npm yet:** the latest published version is **0.8.0**, the retired reliability-score client, so `npm install @credda/js` today gives you the product this page says is gone. The `1.0.0` described here is unpublished on purpose — see [RELEASE.md](RELEASE.md) and the warning below. This repo provides the source and issue tracker; canonical development happens in Credda internal tooling.
 
 # @credda/js
 
@@ -18,15 +16,32 @@
 > webhooks. Credda no longer builds that product, and **none of that surface
 > exists in 1.0.0**. Nothing was renamed and nothing is deprecated — it is gone.
 >
-> `1.0.0` is a client for the **Credda engine**, which finds defects and
-> vulnerabilities in your code and proposes fixes. Upgrading from `0.x` is a
-> rewrite, not a migration, and there is no compatibility layer. If you depend
+> `1.0.0` is a client for the **Credda engine**, which reproduces defects and
+> vulnerabilities you report and proposes fixes for them. Upgrading from `0.x`
+> is a rewrite, not a migration, and there is no compatibility layer. If you depend
 > on the trust client, **pin `@credda/js@0.8.0`**; see [CHANGELOG.md](CHANGELOG.md).
 
-Credda finds the bugs and security vulnerabilities in a company's production and
-QA environments, reproduces the failure, diagnoses the cause, writes the patch,
-proves it with a test that fails before and passes after, and opens a pull
-request. It proposes and never merges.
+You label a bug report or a security vulnerability; Credda reproduces the
+failure, diagnoses the cause, writes the patch, proves it with a test that fails
+before and passes after, and hands back a diff. Whether that diff becomes a
+pull request depends on which mechanism delivered it, and the two answer
+differently: the **GitHub App** path opens one with no flag and no switch, for a
+run that reaches `READY_FOR_REVIEW` with a proven verdict; the **GitHub Action**
+opens none unless you set its `open-pull-request` input, which defaults to
+`false` -- and that input is declared on no version a caller can reach: it is
+absent from `action.yml` at the `v1` tag and on the action's default branch
+alike, so setting it today parses, runs green and delivers nothing. How often a
+run reaches a proven fix at all has not been measured. It proposes and never
+merges.
+
+**The Action has two modes, and the one above is the expensive half.**
+`mode: investigate` is what everything on this page describes: a labelled
+report, a checkout, a container, and -- with a key -- a model. `mode: triage`
+reads a newly opened issue and either asks for the one thing that would make it
+runnable or says nothing at all, which is the right answer about half the time.
+It runs no repository code, starts no container, makes no model call and needs
+no API key, and it is the half a licence is metered against. `open-pull-request`
+is about `investigate`; there is nothing for triage to deliver.
 
 This package is the typed TypeScript client and React hooks for the engine's
 HTTP API — one method per route, and no method without one. The routes it wraps
@@ -36,7 +51,7 @@ are documented at [api.credda.io/reference](https://api.credda.io/reference).
 npm install @credda/js
 ```
 
-> **This installs 0.8.0 today — checked 2026-08-28.** The latest `@credda/js` on
+> **This installs 0.8.0 today — re-checked 2026-08-30.** The latest `@credda/js` on
 > npm is still **0.8.0**, the retired reliability-score client described in the
 > warning above. `1.0.0` — the version this repository contains and this README
 > documents — is **not published yet**. A bare `npm install @credda/js` therefore
@@ -68,6 +83,22 @@ const { investigations, total } = await credda.listInvestigations({ state: 'REPR
 console.log(`${investigations.length} of ${total}`);
 ```
 
+### A worked example you can run
+
+```console
+$ git clone https://github.com/Credda-io/credda-js && cd credda-js
+$ npm install && npm run example
+```
+
+[`examples/watch-a-run.mjs`](examples/watch-a-run.mjs) lists the queue, reads one
+investigation and watches it to a terminal state. It needs **no key, no account
+and no network**: the engine is a loopback stub the script starts itself, and
+the client it drives is the built package out of `dist/`. It shows how the client
+is called and proves a real HTTP round trip through it works — the bearer
+header, the query string, the SSE framing, the terminal `complete` frame. It is
+not evidence about the engine: the payloads are hand-written to the types in
+`src/lib/types.ts`.
+
 There is **no default base URL**. Credda runs against your own deployment, and a
 built-in hostname would be this package guessing where your engine lives — a
 wrong guess that sends your bearer key there.
@@ -89,15 +120,22 @@ body and nothing else.
 ## What the API serves
 
 Every method below maps to one route in the engine. Almost all of it is read:
-the engine is driven by the worker and the CLI, and the only write this API
-accepts is opening an investigation.
+the engine is driven by the worker and the CLI, and the API accepts exactly two
+writes — opening an investigation and cancelling one.
+
+Every query parameter and body field these methods send is one the engine's
+schemas declare, and that is now load-bearing: those schemas reject an
+undeclared key with a `400 VALIDATION_FAILED` naming it, where an unknown one
+used to be accepted and ignored.
 
 ### Investigations — a reported failure being chased down
 
 | Method | Route |
 | --- | --- |
-| `listInvestigations({ state, limit, offset })` | `GET /api/investigations` |
+| `listInvestigations({ repository, signalId, state, outcome, limit, offset })` | `GET /api/investigations` |
 | `createInvestigation({ repositoryId, issueTitle, issueBody, issueRef? })` | `POST /api/investigations` |
+| `createInvestigationOnce(idempotentCreate({ … }))` | `POST /api/investigations` with `Idempotency-Key` |
+| `cancelInvestigation(id, { reason? })` | `POST /api/investigations/:id/cancel` |
 | `getInvestigation(id)` | `GET /api/investigations/:id` |
 | `listInvestigationEvents(id, { since, limit, includeDebug })` | `GET /api/investigations/:id/events` |
 | `listInvestigationEvidence(id, { type, limit, offset })` | `GET /api/investigations/:id/evidence` |
@@ -107,6 +145,74 @@ accepts is opening an investigation.
 not start the run** — the API does not execute anything; the worker does. What
 you watch it with is the event stream.
 
+#### Creating a run twice by accident costs money
+
+Opening an investigation commits a model budget, so a create that is sent again
+because a socket died is a second bill. The route reads an **`Idempotency-Key`**
+header and, under the same key:
+
+| | HTTP | What is true |
+| --- | --- | --- |
+| First request | 201 `CREATED` | A run was opened. |
+| The same body again | 200 `REPLAYED` | The same run, returned again. **Nothing was created and nothing was billed.** |
+| A **different** body | 409 `IDEMPOTENCY_KEY_REUSED` | Refused, and neither run is disclosed. Mint a new key for a new report. |
+| No header at all | 201 | Exactly the old behaviour: one run per request. |
+
+The claim is scoped to your organisation and never expires; it is deleted with
+the investigation.
+
+```ts
+import { idempotentCreate } from '@credda/js/headless';
+
+const claim = idempotentCreate({ repositoryId, issueTitle, issueBody });
+await jobs.record(ticketId, claim.key);   // so a restart sends the same key
+
+const created = await credda.createInvestigationOnce(claim);
+if (created.status === 'CREATED') {
+  // This call opened the run.
+} else {
+  // 'REPLAYED' — an earlier attempt of ours got through. Nothing was billed.
+}
+```
+
+`idempotentCreate` mints the key and freezes it to that body. **The client never
+mints one for you behind a plain `createInvestigation`**: a key says "these
+requests are one intent", the engine's own handler is explicit that only the
+caller can know that — re-running a report against a non-deterministic engine is
+a real thing to want, and a body-derived key would make it impossible — and a
+key this library invented per call could not be sent again by the process that
+crashed and restarted, which is the case that actually double-bills.
+`createInvestigation` therefore sends no key and is never retried;
+`createInvestigationOnce` is the only write this client will repeat.
+
+`cancelInvestigation` answers with what it **achieved**, and the two successful
+answers do not mean the same thing. Narrow on `status` before you show anything
+to an operator:
+
+| `status` | HTTP | What is true |
+| --- | --- | --- |
+| `CANCELLED` | 200 | The job was still queued and was refused its claim. **Nothing is running.** `state` is `CANCELLED`. |
+| `ALREADY_CANCELLED` | 200 | It was already cancelled. Repeating the call is not an error. |
+| `CANCELLATION_REQUESTED` | 202 | A worker is **inside** the run, holding a sandbox and possibly a model call. The request is durable and that worker honours it on its next heartbeat — but the run **has not stopped**, and the API writes no terminal state here. The run writes its own when it lets go; the event stream is how you learn that it did. |
+
+```ts
+const result = await credda.cancelInvestigation(id, { reason: 'wrong repository' });
+if (result.status === 'CANCELLATION_REQUESTED') {
+  // Still running. Watch for the terminal state the run writes itself.
+} else {
+  // result.state is 'CANCELLED'.
+}
+```
+
+The return type is a union, not a record with a boolean, so the 202 cannot be
+read as the 200 by accident: on the `CANCELLATION_REQUESTED` branch `state` is
+typed to exclude `'CANCELLED'`.
+
+Two refusals throw a `CreddaError`, both `409`. `ALREADY_FINISHED`: the run
+reached a terminal state, so there is nothing to stop and nothing to undo.
+`NOT_CANCELLABLE`: the run is executing outside the job queue — which is what
+`credda investigate` does — so this API cannot reach it, and will not pretend it did.
+
 ### Validations — a change being checked before it lands
 
 | Method | Route |
@@ -114,8 +220,8 @@ you watch it with is the event stream.
 | `listValidations({ repository, state, outcome, limit, offset })` | `GET /api/validations` |
 | `getValidation(id)` | `GET /api/validations/:id` |
 | `listValidationChecks(id, { limit, offset })` | `GET /api/validations/:id/checks` |
-| `listFindings(id, { limit, offset })` | `GET /api/validations/:id/findings` |
-| `listValidationEvidence(id, { limit, offset })` | `GET /api/validations/:id/evidence` |
+| `listFindings(id, { severity, status, limit, offset })` | `GET /api/validations/:id/findings` |
+| `listValidationEvidence(id, { type, limit, offset })` | `GET /api/validations/:id/evidence` |
 | `listValidationEvents(id, { since, limit, includeDebug })` | `GET /api/validations/:id/events` |
 | `streamValidation(id, { since, reconnect })` | `GET /api/validations/:id/stream` (SSE) |
 
@@ -152,6 +258,7 @@ a 404 for an id that does not exist. Render them differently.
 | Method | Route |
 | --- | --- |
 | `listRepositories({ limit, offset })` | `GET /api/repositories` |
+| `getRepository(id)` | `GET /api/repositories/:id` |
 | `listLearnings(repositoryId, { kind, limit, offset })` | `GET /api/repositories/:id/learnings` |
 | `getOrganization()` | `GET /api/organization` |
 | `listMembers({ limit, offset })` | `GET /api/organization/members` |
@@ -212,6 +319,7 @@ export default function App() {
 | `useResolution(investigationId)` | the latest resolution record, or `null` |
 | `useValidation(id)` | one validation run |
 | `useValidationEvents(id, opts)` | its live timeline (SSE) |
+| `useCreddaClient()` | the `CreddaClient` the provider holds, for a call no hook wraps |
 
 ## The event stream is SSE, and is read with `fetch`
 
@@ -232,13 +340,19 @@ for await (const event of credda.streamInvestigation(id, { since: 0, reconnect: 
 }
 ```
 
-Three behaviours to build around:
+Four behaviours to build around:
 
 - **`debug` events never arrive on a stream.** The server withholds them and
   offers no way to ask. They stay readable with
   `listInvestigationEvents(id, { includeDebug: true })`.
-- **A stream carrying no event for five minutes is dropped.** That is not an
-  error. `reconnect: true` reopens from the last sequence seen (it defaults to
+- **A finished run closes its own stream.** When the run reaches a terminal
+  state the server sends a `complete` frame carrying that state; the generator
+  returns there and does **not** reconnect, because there is nothing left to
+  reconnect for. Pass `onComplete` to read the state, or take the return as
+  "the run is over". In the hooks it arrives as `completedState`.
+- **A stream carrying no event for five minutes is dropped**, with an `idle`
+  frame saying so. That is not an error and the run has not finished.
+  `reconnect: true` reopens from the last sequence seen (it defaults to
   `true` in the hooks, `false` in the generator).
 - **A revoked key ends the stream mid-flight.** The server re-checks the
   credential once a second and sends an `unauthenticated` frame before closing;
@@ -261,37 +375,58 @@ try {
 ```
 
 Codes the API can send today: `INVALID_REQUEST`, `VALIDATION_FAILED`,
-`UNAUTHENTICATED`, `NOT_FOUND`, `NO_ORGANIZATION`, `PAYLOAD_TOO_LARGE`,
-`UNAVAILABLE`, `TOO_MANY_STREAMS`, `INTERNAL_ERROR`.
+`UNAUTHENTICATED`, `NOT_FOUND`, `NO_ORGANIZATION`, `ALREADY_FINISHED`,
+`NOT_CANCELLABLE`, `IDEMPOTENCY_KEY_REUSED`, `PAYLOAD_TOO_LARGE`,
+`TOO_MANY_STREAMS`, `INTERNAL_ERROR`. `ALREADY_FINISHED` and `NOT_CANCELLABLE`
+are the cancel route's and `IDEMPOTENCY_KEY_REUSED` is the create route's, and
+they appear nowhere else. The type union also carries `UNAVAILABLE`, which no response can
+actually carry — it is a default every call site overrides — and it is listed in
+the type only so that removing an exported member does not break a build.
 
 Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
-re-attempts network errors and 429/502/503/504 on GETs with exponential backoff.
-The engine itself sends none of those four: they come from the ingress in front
-of your deployment, which is also what sets `Retry-After`. When that header is
-present it takes precedence over the curve, and both are capped by
-`maxRetryDelayMs` (5s by default) so a limiter naming a ten-minute window cannot
-hang the call for ten minutes. `CreddaError.retryAfterMs` carries what was read.
+re-attempts network errors and 429/502/503/504 with exponential backoff. `503`
+is the one the engine itself sends, as `TOO_MANY_STREAMS`; the other three come
+from the ingress in front of your deployment, which is also what sets
+`Retry-After`. When that header is present it takes precedence over the curve,
+and both are capped by `maxRetryDelayMs` (5s by default) so a limiter naming a
+ten-minute window cannot hang the call for ten minutes.
+`CreddaError.retryAfterMs` carries what was read.
 
 This is the same list, the same precedence and the same ceiling as
 [`credda-go`](https://github.com/Credda-io/credda-go).
 
-`createInvestigation` is never retried whatever you set — the route defines no
-idempotency key, so a repeat would open a second investigation into the same
-report. `getHealth` is never retried either: a degraded database does not
+Every GET is retried, and exactly one write: `createInvestigationOnce`, which
+carries an `Idempotency-Key` the engine deduplicates against, so a repeat
+returns the run the first attempt opened rather than opening a second.
+`createInvestigation` sends no key and is never retried, whatever you set — a
+repeat would open, and bill for, a second investigation into the same report.
+`cancelInvestigation` is idempotent at the server, but a repeat that crosses a
+worker's heartbeat answers a different status than the attempt it replaced, and
+a retry that swallowed that would hand back "cancelled" for a call that was told
+"requested". `getHealth` is never retried either: a degraded database does not
 recover by being asked twice.
 
 ## Status of the fix path
 
-Credda's product is the fix: reproduce, diagnose, patch, prove, open a pull
-request. What a user will look for and not find **on this HTTP API** is below,
+Credda's product is the fix: reproduce, diagnose, patch, prove, hand back a
+diff. What a user will look for and not find **on this HTTP API** is below,
 and it is a status with a date on it rather than a position:
 
 - **No pull-request route, as of 2026-08-28.** Nothing here returns a PR link or
-  opens one. The engine does open pull requests -- its GitHub App asks an
+  opens one. The engine can open a pull request -- its GitHub App asks an
   operator for Contents write and Pull requests write, and its delivery path
-  uses them for a run that reaches a proven verdict -- but that happens on the
-  engine's own delivery path and is not surfaced as a route here. When a route
-  appears, a method appears; this package will not invent one in the meantime.
+  uses them for a run that reaches a proven verdict -- but that delivery is not
+  surfaced as a route here. When a route appears, a method appears; this package
+  will not invent one in the meantime.
+
+  That delivery is **not** opt-in, and this bullet said it was until 2026-08-29.
+  `apps/worker/src/handlers/change-proposal-delivery.ts` states in as many words
+  that there is no opt-in switch and no flag: the gate is the state and the
+  verdict, widened or narrowed only by a code review. The `open-pull-request`
+  input that defaults to `false` belongs to the **GitHub Action**, which is a
+  different mechanism -- it runs on the caller's own runner and calls
+  `gh pr create` -- and describing the two in one sentence is wrong about one of
+  them.
 - **`patches`, `verifications` and `resolution.fix` are typed and served, and
   are `null` or empty on a run that did not enter the patch stage.** The API
   serializes them on every investigation detail and every resolution record.
@@ -302,7 +437,9 @@ and it is a status with a date on it rather than a position:
   run happened on 2026-08-27, ADR 0019 put the Fixer and the Verifier back on
   the investigation path the same day, and the following day the engine's
   delivery path was wired to open a pull request for a run that reaches a proven
-  verdict.
+  verdict. That path has no flag; see the bullet above for which mechanism the
+  off-by-default input actually belongs to. How often a run reaches a proven fix
+  at all has not been measured, and no count is claimed here.
 
   What did **not** change is the rule that made the old sentence worth writing:
   a stage that did not run is never reported as a measured zero. Against the

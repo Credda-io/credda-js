@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  /* The published surface only. `tsconfig.json` typechecks the tests as well;
+     this config is what emits, so no declaration is ever generated for a test. */
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts"
+  ]
+}

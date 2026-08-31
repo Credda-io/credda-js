@@ -42,8 +42,27 @@ describe('Transport construction', () => {
     );
   });
 
-  it('refuses when there is no fetch to use', () => {
-    expect(() => new Transport({ baseUrl: 'http://x', fetch: undefined as never })).not.toThrow();
+  /* This was one test titled "refuses when there is no fetch to use" whose
+   * only assertion was `.not.toThrow()`. The title named the refusal and the
+   * assertion pinned the opposite, so whichever a reader believed, the file
+   * proved the other -- and the refusal itself, the line that stops a bearer
+   * key being handed to `undefined`, was never executed by anything. Two
+   * tests, each saying what it asserts. */
+  it('falls back to the global fetch when the config leaves it undefined', () => {
+    expect(() => new Transport({ baseUrl: 'http://x', fetch: undefined })).not.toThrow();
+  });
+
+  it('refuses when there is no fetch to fall back to either', () => {
+    const global = globalThis.fetch;
+    try {
+      (globalThis as { fetch?: unknown }).fetch = undefined;
+      expect(() => new Transport({ baseUrl: 'http://x' })).toThrow(/no fetch available/);
+      expect(() => new Transport({ baseUrl: 'http://x', fetch: undefined })).toThrow(
+        /no fetch available/,
+      );
+    } finally {
+      globalThis.fetch = global;
+    }
   });
 });
 
@@ -66,7 +85,7 @@ describe('Transport headers', () => {
 
 describe('Transport.get', () => {
   it('returns the parsed body and hits the composed URL', async () => {
-    const fetchImpl = vi.fn(async () => json(200, { ok: true }));
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => json(200, { ok: true }));
     const transport = new Transport({ baseUrl: 'http://x/', apiKey: 'k', fetch: fetchImpl as never });
     await expect(transport.get('/api/investigations?limit=1')).resolves.toEqual({ ok: true });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -198,9 +217,10 @@ describe('Transport retries', () => {
 
 describe('Transport.post', () => {
   it('sends JSON with the content type and is never retried', async () => {
-    // No idempotency key exists on this API, so a repeat would open a second
-    // investigation into the same report.
-    const fetchImpl = vi.fn(async () => json(502, {}));
+    // `post` has no idempotency-key parameter, so nothing it sends can be
+    // deduplicated and a repeat of a create would open a second investigation
+    // into the same report. `postIdempotent` is the retrying write.
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => json(502, {}));
     const transport = new Transport({ baseUrl: 'http://x', apiKey: 'k', retries: 5, retryBaseMs: 0, fetch: fetchImpl as never });
     await expect(transport.post('/api/investigations', { issueTitle: 'x' })).rejects.toMatchObject({ status: 502 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -209,6 +229,45 @@ describe('Transport.post', () => {
     expect(init.body).toBe('{"issueTitle":"x"}');
     expect((init.headers as Record<string, string>)['Content-Type']).toBe('application/json');
     expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer k');
+  });
+});
+
+describe('Transport.postIdempotent', () => {
+  it('sends the key as a header and returns the status alongside the body', async () => {
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => json(201, { investigation: { id: 'inv_1' } }));
+    const transport = new Transport({ baseUrl: 'http://x', apiKey: 'k', fetch: fetchImpl as never });
+    const result = await transport.postIdempotent('/api/investigations', { issueTitle: 'x' }, 'key-1' as never);
+    expect(result.status).toBe(201);
+    expect(result.body).toEqual({ investigation: { id: 'inv_1' } });
+    const init = fetchImpl.mock.calls[0]![1] as RequestInit;
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('key-1');
+  });
+
+  it('is retried, because the key makes a repeat exactly-once at the server', async () => {
+    let call = 0;
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      return call < 3 ? json(502, {}) : json(200, { investigation: { id: 'inv_1' } });
+    });
+    const transport = new Transport({
+      baseUrl: 'http://x',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    const result = await transport.postIdempotent('/api/investigations', {}, 'key-1' as never);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(result.status).toBe(200);
+  });
+
+  it('does not retry the reused-key refusal, which is an answer and not a blip', async () => {
+    const fetchImpl = vi.fn(async () => json(409, envelope('IDEMPOTENCY_KEY_REUSED', 'already used')));
+    const transport = new Transport({ baseUrl: 'http://x', retries: 3, retryBaseMs: 0, fetch: fetchImpl as never });
+    await expect(transport.postIdempotent('/api/investigations', {}, 'key-1' as never)).rejects.toMatchObject({
+      status: 409,
+      code: 'IDEMPOTENCY_KEY_REUSED',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
 

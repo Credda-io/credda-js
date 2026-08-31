@@ -232,6 +232,35 @@ describe('useInvestigationEvents', () => {
     );
   });
 
+  /*
+   * The default here is `reconnect: true`, which is what makes this the case
+   * that mattered: a finished run was indistinguishable from a quiet one, the
+   * subscription reopened every time the server closed it, and a mounted
+   * component watched a run that had been over for hours. `WatchedTimeline`
+   * takes the default deliberately.
+   */
+  it('ends on the complete frame and reports the terminal state, without reopening', async () => {
+    function WatchedTimeline({ id }: { id: string }) {
+      const { streaming, completedState } = useInvestigationEvents(id);
+      return (
+        <span>
+          {streaming ? 'live' : 'closed'}:{completedState ?? 'in-flight'}
+        </span>
+      );
+    }
+    const live = liveSse();
+    const fetchImpl = vi.fn(async () => live.response);
+    render(<WatchedTimeline id="inv_1" />, { wrapper: wrapper(fetchImpl) });
+    await waitFor(() => expect(screen.getByText('live:in-flight')).toBeTruthy());
+
+    await act(async () => {
+      live.push(7, 'complete', { state: 'READY_FOR_REVIEW' });
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    await waitFor(() => expect(screen.getByText('closed:READY_FOR_REVIEW')).toBeTruthy());
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('aborts the stream when the component unmounts', async () => {
     const live = liveSse();
     let signal: AbortSignal | undefined;

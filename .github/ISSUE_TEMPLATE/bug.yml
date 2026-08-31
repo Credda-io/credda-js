@@ -1,0 +1,89 @@
+name: The client did something wrong
+description: A method, a hook or a type in @credda/js behaves other than documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before anything else: which package are you actually running?**
+
+        A bare `npm install @credda/js` gets **0.8.0**, the retired
+        reliability-score client — `useScore`, share tokens, disputes. That
+        surface is gone from `1.0.0` and nothing was renamed. If your problem is
+        that a `0.x` name no longer exists, that is not a bug and
+        [CHANGELOG.md](../../CHANGELOG.md) is the answer.
+  - type: checkboxes
+    id: not-the-pivot
+    attributes:
+      label: Before filing
+      options:
+        - label: This is not a `0.x` trust-client name that 1.0.0 removed on purpose.
+          required: true
+  - type: dropdown
+    id: entry
+    attributes:
+      label: Which entry point
+      description: >
+        React is an optional peer dependency. Importing the root entry in a Node
+        service and getting `Cannot find package 'react'` is documented
+        behaviour — import `@credda/js/headless` there.
+      options:
+        - '@credda/js/headless'
+        - '@credda/js'
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: The expression, and the value you got
+      description: >
+        **This is the field that decides whether anyone can reproduce you**, so
+        it is worth spending a minute on. Give one expression and, beside it or
+        under it, the value it actually produced — as a literal, not as prose.
+        Three shapes read cleanly:
+
+
+        `credda.investigations.get('inv_1')` then `//=> undefined` on the next
+        line; or the two on one line separated by `//=>`; or a REPL transcript
+        where `>` precedes the expression and the value is on the line after.
+
+
+        "It returns the wrong thing" is not a value. Neither is "it should
+        return the investigation" — that is what you wanted, and what a
+        reproduction needs is what happened.
+      render: js
+      placeholder: |
+        const r = await credda.investigations.get('inv_01H...');
+        r.status;
+        //=> undefined
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: The value you expected instead
+      description: Also a literal, and separately from the one above.
+    validations:
+      required: true
+  - type: textarea
+    id: response
+    attributes:
+      label: The HTTP response, if the client made one
+      description: >
+        Status line, and the body if it is not yours to keep. Redact the API key
+        and anything private — the client puts the key in a header, so it is not
+        in the body.
+      render: text
+  - type: input
+    id: versions
+    attributes:
+      label: '@credda/js version, Node version, and React version if the root entry is involved'
+    validations:
+      required: true
+  - type: input
+    id: baseurl
+    attributes:
+      label: Which deployment
+      description: >
+        There is no default `baseUrl`. Naming the deployment shape — your own
+        host, or api.credda.io — is usually enough; the URL itself is not needed.

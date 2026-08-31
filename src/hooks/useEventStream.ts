@@ -19,6 +19,15 @@ export interface UseEventStreamResult<T> {
   latestSequence: number;
   /** True once the stream is open and has not ended. */
   streaming: boolean;
+  /**
+   * The terminal state the server reported, or null while the run is still in
+   * flight.
+   *
+   * `streaming` going false does not on its own mean the run ended -- with
+   * `reconnect` off it also means one pass is over. This is the run's own
+   * answer, and it is set only by the server's `complete` frame.
+   */
+  completedState: string | null;
   error: Error | null;
 }
 
@@ -36,16 +45,28 @@ export interface UseEventStreamResult<T> {
  * carried nothing for five minutes — which a long, quiet run reliably does.
  * Resumption is by sequence, so nothing is missed across a reconnect. A revoked
  * key ends the stream for good and arrives as `error`.
+ *
+ * A run that REACHES A TERMINAL STATE also ends the stream for good, and the
+ * state arrives as `completedState`. Before the server said so, a finished run
+ * looked identical to a quiet one from here: with `reconnect` on -- the default
+ * -- the subscription reopened every time the server closed it, and a mounted
+ * component watched an investigation that had been over for hours.
  */
 export function useEventStream<T extends SequencedEvent>(
   key: string | null | undefined,
-  open: (since: number, signal: AbortSignal, reconnect: boolean) => AsyncGenerator<T>,
+  open: (
+    since: number,
+    signal: AbortSignal,
+    reconnect: boolean,
+    onComplete: (state: string) => void,
+  ) => AsyncGenerator<T>,
   options: UseEventStreamOptions = {},
 ): UseEventStreamResult<T> {
   const { since = 0, reconnect = true } = options;
   const [events, setEvents] = useState<T[]>([]);
   const [latestSequence, setLatestSequence] = useState(since);
   const [streaming, setStreaming] = useState(false);
+  const [completedState, setCompletedState] = useState<string | null>(null);
   const [error, setError] = useState<Error | null>(null);
   // Held in a ref so a re-render mid-stream cannot resubscribe from the start.
   const seenRef = useRef(since);
@@ -66,11 +87,15 @@ export function useEventStream<T extends SequencedEvent>(
     setEvents([]);
     setLatestSequence(since);
     setError(null);
+    setCompletedState(null);
     setStreaming(true);
 
     void (async () => {
       try {
-        for await (const event of openRef.current(seenRef.current, controller.signal, reconnect)) {
+        const stream = openRef.current(seenRef.current, controller.signal, reconnect, (state) => {
+          if (!cancelled) setCompletedState(state);
+        });
+        for await (const event of stream) {
           if (cancelled) break;
           seenRef.current = Math.max(seenRef.current, event.sequence);
           setEvents((prev) => [...prev, event]);
@@ -91,5 +116,5 @@ export function useEventStream<T extends SequencedEvent>(
     };
   }, [key, since, reconnect]);
 
-  return { events, latestSequence, streaming, error };
+  return { events, latestSequence, streaming, completedState, error };
 }

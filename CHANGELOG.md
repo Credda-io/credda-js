@@ -8,10 +8,15 @@
 API**: a 0–100 score for a person or business, share tokens, verifiable
 credentials, disputes, earnings, webhook verification.
 
-Credda no longer builds that product. Credda now finds the bugs and security
-vulnerabilities in a company's production and QA environments, reproduces the
-failure, diagnoses the cause, writes the patch, proves it with a test that fails
-before and passes after, and opens a pull request. It proposes and never merges.
+Credda no longer builds that product. Credda is now handed a bug report or a
+vulnerability somebody has already filed, reproduces the failure, diagnoses the
+cause, writes the patch, and proves it with a test that fails before the patch
+and passes after. It proposes and never merges.
+
+It does not go looking for defects. Every run starts from a report, and the
+README of this package has said so throughout; this paragraph said "finds the
+bugs", which is a different and larger product than the one the API below
+serves.
 
 `1.0.0` is a client for that engine. **It shares no API surface with `0.8.0`.**
 This is not a rename, a deprecation cycle or a migration: the old methods do not
@@ -57,13 +62,13 @@ A typed client over the Credda engine API — one method per route in
 `apps/api/src/routes/`, and no method without one:
 
 - **Investigations**: `listInvestigations`, `createInvestigation`,
-  `getInvestigation`, `listInvestigationEvents`, `listInvestigationEvidence`,
-  `streamInvestigation`.
+  `createInvestigationOnce`, `cancelInvestigation`, `getInvestigation`, `listInvestigationEvents`,
+  `listInvestigationEvidence`, `streamInvestigation`.
 - **Validations**: `listValidations`, `getValidation`, `listValidationChecks`,
   `listFindings`, `listValidationEvidence`, `listValidationEvents`,
   `streamValidation`.
 - **Resolutions**: `listResolutions`, `latestResolution`, `getResolution`.
-- **Repositories and memory**: `listRepositories`, `listLearnings`.
+- **Repositories and memory**: `listRepositories`, `getRepository`, `listLearnings`.
 - **Workspace**: `getOrganization`, `listMembers`, `listApiKeys`.
 - **Operations**: `getHealth`, `isLive`, `getMetrics`.
 
@@ -78,6 +83,39 @@ An SSE reader (`streamSse`, `SseDecoder`) built on `fetch` rather than
 Wire types for the whole surface, transcribed field for field from the API's own
 serializers, with the vocabularies (`InvestigationState`, `ValidationOutcome`,
 `CheckStatus`, `ResolutionConfidenceClass`, …) as string unions.
+
+`cancelInvestigation` returns a **union**, not a record with a boolean, and this
+is the one place in the package where the return type is doing safety work.
+`POST /api/investigations/{id}/cancel` reports what it achieved: `200 CANCELLED`
+means the job was still queued and nothing is running; `202
+CANCELLATION_REQUESTED` means a worker is inside the run, the request is durable
+and will be honoured on a heartbeat, and the run has **not** stopped — the API
+writes no terminal state there, the run writes its own when it lets go. A client
+that collapsed the two would show "cancelled" over a container still cloning a
+repository and still spending a model budget. So `Cancellation` is
+`CancellationStopped | CancellationRequested`, and on the requested branch
+`state` is typed to exclude `'CANCELLED'`. Both 409 refusals —
+`ALREADY_FINISHED` and `NOT_CANCELLABLE` — are thrown as `CreddaError`, because
+neither stopped anything.
+
+`createInvestigationOnce` sends an **`Idempotency-Key`** and is the one write
+this client retries. Opening an investigation commits a model budget, so a
+create repeated because a socket died is a second bill. Under a key the engine
+returns the run the first request opened, with 200 instead of 201; the same key
+over a *different* body is a 409 `IDEMPOTENCY_KEY_REUSED` disclosing neither
+run. The result is a union — `CREATED` means this call opened the run,
+`REPLAYED` means an earlier one did and nothing was billed — because the two
+bodies are identical and only the status line separates them.
+
+The key is the caller's, never invented on their behalf. `idempotentCreate`
+mints one and freezes it to the body it was minted for, so a key cannot drift
+onto a report it does not stand for, and `Transport.postIdempotent` takes the
+key as a required parameter, so "retried" and "carries a key" cannot come apart.
+`createInvestigation` sends no key, is never retried, and behaves exactly as the
+route did before the header existed.
+
+`CreddaErrorCode` gains `ALREADY_FINISHED`, `NOT_CANCELLABLE` and
+`IDEMPOTENCY_KEY_REUSED`.
 
 ### Changed
 

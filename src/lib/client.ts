@@ -3,9 +3,17 @@
  *
  * One method per route in `apps/api/src/routes/`, and no method that is not one.
  * The surface is almost entirely read: the engine is driven by the worker and
- * the CLI, and the only write this API accepts is opening an investigation
- * (`POST /api/investigations`), which is a row in `CREATED` — the run itself
- * starts elsewhere.
+ * the CLI, and the API accepts exactly two writes. `POST /api/investigations`
+ * opens one, which is a row in `CREATED` — the run itself starts elsewhere, and
+ * an `Idempotency-Key` makes sending it twice safe; see
+ * {@link CreddaClient.createInvestigationOnce}. And
+ * `POST /api/investigations/{id}/cancel` stops one, and says whether it
+ * actually stopped it or only asked; see {@link CreddaClient.cancelInvestigation}.
+ *
+ * Every query and body this client sends names only keys the engine's schemas
+ * declare. That is now load-bearing rather than tidy: those schemas are
+ * `.strict()`, so an undeclared key is a 400 `VALIDATION_FAILED` naming it,
+ * where it was once accepted and ignored.
  *
  * Authentication is one bearer key on every `/api` route
  * (`apps/api/src/auth.ts`). The key identifies an ORGANISATION, not a person,
@@ -16,24 +24,31 @@
 
 import { Transport, queryString } from './http.js';
 import type { CreddaConfig, RequestOptions } from './http.js';
+import type { IdempotentCreate } from './idempotency.js';
 import { streamSse } from './stream.js';
 import type { StreamOptions } from './stream.js';
 import type {
   ApiKeyPage,
+  Cancellation,
   EvidencePage,
   EvidenceType,
   FindingPage,
+  FindingSeverity,
+  FindingStatus,
   Health,
   InvestigationDetail,
   InvestigationEvent,
+  InvestigationCreation,
   InvestigationEventPage,
   InvestigationListPage,
+  InvestigationOutcome,
   InvestigationState,
   LatestResolution,
   LearningKind,
   LearningPage,
   OrganizationMemberPage,
   OrganizationOverview,
+  Repository,
   RepositoryListPage,
   Resolution,
   ResolutionConfidenceClass,
@@ -56,7 +71,28 @@ export interface PageQuery extends RequestOptions {
 }
 
 export interface ListInvestigationsQuery extends PageQuery {
+  /** A repository id. An unknown one is a 404, never an empty page. */
+  repository?: string | undefined;
   state?: InvestigationState | undefined;
+  /**
+   * A terminal outcome. One token, never a list: `listQuery` in
+   * `apps/api/src/routes/investigations.ts` is a single `z.enum` against an
+   * `= ?` predicate, and a run that has not reached a terminal outcome has NULL
+   * and so matches no value at all. Ask `state` for what is still in flight.
+   */
+  outcome?: InvestigationOutcome | undefined;
+  /**
+   * The signal that raised the run, named `signalId` here for the reason
+   * {@link ListResolutionsQuery.signalId} gives: `signal` would sit next to the
+   * `AbortSignal` every query on this client takes. An unknown one is a 404,
+   * never an empty page.
+   *
+   * A run nothing raised has no signal and matches no value that can be sent,
+   * the same shape `outcome` has. It is the only way to ask for every
+   * investigation one signal caused, including the ones that resolved nothing
+   * -- walking `/api/resolutions` shows only the runs that produced a record.
+   */
+  signalId?: string | undefined;
 }
 
 export interface ListEventsQuery extends RequestOptions {
@@ -79,6 +115,16 @@ export interface ListLearningsQuery extends PageQuery {
   kind?: LearningKind | undefined;
 }
 
+/**
+ * `severity` and `status` narrow with AND, one token each -- the route takes a
+ * single `z.enum` for both. Both columns are NOT NULL, so every finding answers
+ * both and there is no absent-value token.
+ */
+export interface ListFindingsQuery extends PageQuery {
+  severity?: FindingSeverity | undefined;
+  status?: FindingStatus | undefined;
+}
+
 export interface ListValidationsQuery extends PageQuery {
   /** A repository id. An unknown one is a 404, never an empty page. */
   repository?: string | undefined;
@@ -99,6 +145,15 @@ export interface ListResolutionsQuery extends PageQuery {
 
 /** The body of `POST /api/investigations`. Every field is one `createBody` accepts. */
 export interface CreateInvestigationInput {
+  /**
+   * There is no key field on the body, and this one exists to say so with the
+   * compiler rather than a comment. The engine reads the key from an
+   * `Idempotency-Key` HEADER, and `createBody` is `.strict()`, so a key set
+   * here would be a 400 naming it. Pair a key with a body through
+   * `idempotentCreate` and send it with
+   * {@link CreddaClient.createInvestigationOnce}.
+   */
+  idempotencyKey?: never;
   repositoryId: string;
   /** 1–500 characters. */
   issueTitle: string;
@@ -106,6 +161,16 @@ export interface CreateInvestigationInput {
   issueBody: string;
   /** 1–500 characters. The reporter's own reference, e.g. an issue URL. */
   issueRef?: string | undefined;
+}
+
+/** The body of `POST /api/investigations/{id}/cancel`. */
+export interface CancelInvestigationInput extends RequestOptions {
+  /**
+   * Recorded against the run, not required: `cancelBody` makes it optional
+   * because a cancel with nothing said is still a cancel. 1–500 characters when
+   * given; an empty string is a 400.
+   */
+  reason?: string | undefined;
 }
 
 export class CreddaClient {
@@ -117,9 +182,24 @@ export class CreddaClient {
 
   // ── Investigations ─────────────────────────────────────────────────────────
 
+  /**
+   * The investigation queue.
+   *
+   * `repository` and `outcome` were absent from this method's query until
+   * 2026-08-29 while the route accepted both, so the two filters a caller most
+   * wants on a queue -- whose repository, and how did it end -- could not be
+   * expressed at all. They were also unrecoverable by accident: an `outcome`
+   * key passed anyway fell into the rest element below and was handed to
+   * `fetch` as a request option, where it was ignored in silence rather than
+   * refused. The sibling queues (`listValidations`, `listResolutions`) carried
+   * their full sets throughout; this one did not.
+   */
   listInvestigations(query: ListInvestigationsQuery = {}): Promise<InvestigationListPage> {
-    const { state, limit, offset, ...options } = query;
-    return this.transport.get(`/api/investigations${queryString({ state, limit, offset })}`, options);
+    const { repository, state, outcome, signalId, limit, offset, ...options } = query;
+    return this.transport.get(
+      `/api/investigations${queryString({ repository, state, outcome, signal: signalId, limit, offset })}`,
+      options,
+    );
   }
 
   /**
@@ -129,14 +209,110 @@ export class CreddaClient {
    * the API does not run the engine. What advances it is the worker, and what a
    * caller watches it with is {@link streamInvestigation}.
    *
-   * Never retried, whatever `retries` is set to: there is no idempotency key on
-   * this route, so a repeat opens a second investigation into the same report.
+   * Sends no `Idempotency-Key` and is never retried, whatever `retries` is set
+   * to. Without that header the route behaves exactly as it did before the
+   * header existed — one run per request — so a repeat of this call opens, and
+   * bills for, a second investigation into the same report. That is the right
+   * default for a caller who has not said the two requests are one intent, and
+   * it is not the call to make from a job queue that will retry you: use
+   * {@link createInvestigationOnce}.
    */
   createInvestigation(
     input: CreateInvestigationInput,
     options: RequestOptions = {},
   ): Promise<InvestigationDetail> {
     return this.transport.post('/api/investigations', input, options);
+  }
+
+  /**
+   * Opens an investigation under an idempotency key — the one write on this
+   * client that `retries` will repeat.
+   *
+   * Running an investigation spends a model budget, so a create that is sent
+   * twice because a socket died is a second bill. The engine's create route
+   * reads an `Idempotency-Key` and returns the run the first request under that
+   * key created, with 200 instead of 201, so repeating this call is
+   * exactly-once at the server and retrying it is safe.
+   *
+   * ```ts
+   * const claim = idempotentCreate({ repositoryId, issueTitle, issueBody });
+   * await jobs.record(ticketId, claim.key);   // so a restart sends the same key
+   * const created = await credda.createInvestigationOnce(claim);
+   * if (created.status === 'CREATED') {
+   *   budget.commit(created.investigation.investigation.id);   // a run just opened
+   * }
+   * // 'REPLAYED' — an earlier attempt of ours got through. Nothing was created
+   * // here and nothing was billed.
+   * ```
+   *
+   * The key and the body arrive together, in one frozen value made by
+   * `idempotentCreate`, because the engine's other answer is a refusal: the
+   * same key over a DIFFERENT body is a 409 `IDEMPOTENCY_KEY_REUSED`
+   * {@link CreddaError}, disclosing neither run. Making the pair as a unit is
+   * what keeps a key from drifting onto a report it was not minted for; there
+   * is no overload here that takes the two separately.
+   *
+   * The claim is scoped to the organisation the API key names and never
+   * expires. It is deleted when the investigation is.
+   */
+  async createInvestigationOnce(
+    claim: IdempotentCreate,
+    options: RequestOptions = {},
+  ): Promise<InvestigationCreation> {
+    const { status, body } = await this.transport.postIdempotent<InvestigationDetail>(
+      '/api/investigations',
+      claim.input,
+      claim.key,
+      options,
+    );
+    // 201 is the run this request opened; every other success on this route is
+    // the engine handing back one it already had. Read off the status line
+    // because the two bodies are identical.
+    return status === 201
+      ? { status: 'CREATED', key: claim.key, investigation: body }
+      : { status: 'REPLAYED', key: claim.key, investigation: body };
+  }
+
+  /**
+   * Stops a run — or records that it has been asked to stop, and says which.
+   *
+   * The one call on this client where the return value must be narrowed before
+   * anything is shown to a person. A cancel that reports success over a
+   * container still cloning a repository, still running a test suite and still
+   * spending a model budget has told an operator something false about their
+   * own machine and their own bill, so this returns the route's own
+   * distinction rather than a boolean:
+   *
+   * ```ts
+   * const result = await credda.cancelInvestigation(id, { reason: 'wrong repo' });
+   * if (result.status === 'CANCELLATION_REQUESTED') {
+   *   // A worker is still inside the run. It stops on its next heartbeat and
+   *   // writes its own terminal state; watch the stream for it.
+   *   for await (const event of credda.streamInvestigation(id)) { ... }
+   * } else {
+   *   // result.state is 'CANCELLED'. Nothing is running.
+   * }
+   * ```
+   *
+   * Throws a {@link CreddaError} for the two refusals, both 409: code
+   * `ALREADY_FINISHED` when the run reached a terminal state — there is nothing
+   * to stop and nothing to undo — and `NOT_CANCELLABLE` when it is executing
+   * outside the job queue, which is what `credda investigate` does. The API cannot
+   * reach that process and will not pretend it did.
+   *
+   * Repeating the call is safe: an already-cancelled run answers 200
+   * `ALREADY_CANCELLED` rather than an error. It is still not retried
+   * automatically — it goes through {@link Transport.post}, which carries no
+   * idempotency key and retries nothing — because a repeat that crosses a
+   * worker's heartbeat answers a different status than the attempt it replaced.
+   */
+  cancelInvestigation(id: string, input: CancelInvestigationInput = {}): Promise<Cancellation> {
+    const { reason, ...options } = input;
+    return this.transport.post(
+      `/api/investigations/${encodeURIComponent(id)}/cancel`,
+      reason === undefined ? {} : { reason },
+      options,
+    );
   }
 
   getInvestigation(id: string, options: RequestOptions = {}): Promise<InvestigationDetail> {
@@ -185,6 +361,23 @@ export class CreddaClient {
   listRepositories(query: PageQuery = {}): Promise<RepositoryListPage> {
     const { limit, offset, ...options } = query;
     return this.transport.get(`/api/repositories${queryString({ limit, offset })}`, options);
+  }
+
+  /**
+   * One repository by id.
+   *
+   * Every investigation and validation this client returns carries a
+   * `repositoryId`, and resolving one used to mean paging {@link
+   * listRepositories} until the id turned up -- a scan whose cost grows with
+   * the organisation and which no filter shortens. Unwrapped from the route's
+   * `{ repository }` envelope, as {@link getResolution} is.
+   */
+  async getRepository(id: string, options: RequestOptions = {}): Promise<Repository> {
+    const body = await this.transport.get<{ repository: Repository }>(
+      `/api/repositories/${encodeURIComponent(id)}`,
+      options,
+    );
+    return body.repository;
   }
 
   /**
@@ -261,18 +454,23 @@ export class CreddaClient {
     );
   }
 
-  listFindings(id: string, query: PageQuery = {}): Promise<FindingPage> {
-    const { limit, offset, ...options } = query;
+  /** Triage without pulling every row: `severity` and `status` narrow with AND. */
+  listFindings(id: string, query: ListFindingsQuery = {}): Promise<FindingPage> {
+    const { severity, status, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/validations/${encodeURIComponent(id)}/findings${queryString({ limit, offset })}`,
+      `/api/validations/${encodeURIComponent(id)}/findings${queryString({ severity, status, limit, offset })}`,
       options,
     );
   }
 
-  listValidationEvidence(id: string, query: PageQuery = {}): Promise<ValidationEvidencePage> {
-    const { limit, offset, ...options } = query;
+  /** `type` is the same filter `listInvestigationEvidence` takes, over the same rows. */
+  listValidationEvidence(
+    id: string,
+    query: ListEvidenceQuery = {},
+  ): Promise<ValidationEvidencePage> {
+    const { type, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/validations/${encodeURIComponent(id)}/evidence${queryString({ limit, offset })}`,
+      `/api/validations/${encodeURIComponent(id)}/evidence${queryString({ type, limit, offset })}`,
       options,
     );
   }

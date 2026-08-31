@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CreddaClient } from './client.js';
+import { idempotencyKey, idempotentCreate, newIdempotencyKey } from './idempotency.js';
 
 /**
  * A fetch double that records every call and answers with a fixed JSON body.
@@ -39,11 +40,140 @@ describe('investigations', () => {
     );
   });
 
+  /*
+   * `repository` and `outcome` are filters the route has always accepted and
+   * this method could not express. An `outcome` passed anyway fell into the
+   * rest element and was handed to `fetch` as a request option, so the caller
+   * got an unfiltered page and no error at all.
+   */
+  it('passes the repository and outcome filters the route accepts', async () => {
+    const fetchImpl = stub({ investigations: [], total: 0 });
+    await clientWith(fetchImpl).listInvestigations({
+      repository: 'repo_1',
+      outcome: 'REPRODUCED_AND_DIAGNOSED',
+    });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://engine.example.com/api/investigations?repository=repo_1&outcome=REPRODUCED_AND_DIAGNOSED',
+    );
+  });
+
+  it('can filter the queue by a terminal outcome the fix stage produces', async () => {
+    const fetchImpl = stub({ investigations: [], total: 0 });
+    await clientWith(fetchImpl).listInvestigations({ outcome: 'VERIFIED' });
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations?outcome=VERIFIED');
+  });
+
+  /*
+   * The queue is the only place that answers "every investigation this signal
+   * caused, including the ones that resolved nothing". Walking `/api/resolutions`
+   * by signal shows only the runs that produced a record, which is exactly the
+   * population this product must not report on selectively.
+   */
+  it('passes the signal filter, renamed away from AbortSignal as on resolutions', async () => {
+    const fetchImpl = stub({ investigations: [], total: 0 });
+    await clientWith(fetchImpl).listInvestigations({ signalId: 'sig_1' });
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations?signal=sig_1');
+  });
+
   it('returns the list page whole, so `total` is not mistaken for the page length', async () => {
     const page = { investigations: [{ id: 'inv_1' }], total: 91 };
     const result = await clientWith(stub(page)).listInvestigations({ limit: 1 });
     expect(result.total).toBe(91);
     expect(result.investigations).toHaveLength(1);
+  });
+
+  it('sends no idempotency key on the plain create, so the route behaves as it always did', async () => {
+    const fetchImpl = stub({ investigation: { id: 'inv_1', state: 'CREATED' } }, 201);
+    await clientWith(fetchImpl).createInvestigation({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' });
+    expect((initOf(fetchImpl).headers as Record<string, string>)['Idempotency-Key']).toBeUndefined();
+  });
+
+  it('sends the key as a header and never on the body, which createBody would refuse', async () => {
+    const fetchImpl = stub({ investigation: { id: 'inv_1', state: 'CREATED' } }, 201);
+    const key = idempotencyKey('claim-42');
+    const claim = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' }, key);
+    await clientWith(fetchImpl).createInvestigationOnce(claim);
+    const init = initOf(fetchImpl);
+    expect((init.headers as Record<string, string>)['Idempotency-Key']).toBe('claim-42');
+    expect(JSON.parse(String(init.body))).toEqual({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' });
+  });
+
+  it('reads CREATED off the 201 and REPLAYED off the 200, because the bodies are identical', async () => {
+    const body = { investigation: { id: 'inv_1', state: 'CREATED' } };
+    const claim = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' });
+
+    const first = await clientWith(stub(body, 201)).createInvestigationOnce(claim);
+    expect(first.status).toBe('CREATED');
+    expect(first.key).toBe(claim.key);
+    expect(first.investigation).toEqual(body);
+
+    const replay = await clientWith(stub(body, 200)).createInvestigationOnce(claim);
+    expect(replay.status).toBe('REPLAYED');
+    expect(replay.investigation).toEqual(body);
+  });
+
+  it('is retried under a key, and the replay means exactly one run was opened', async () => {
+    const body = { investigation: { id: 'inv_1', state: 'CREATED' } };
+    let call = 0;
+    // The first attempt reaches the engine, opens the run, and the response is
+    // lost on the way back. The retry carries the same key, so the engine hands
+    // back that same run with a 200 rather than opening a second.
+    const fetchImpl = vi.fn(async () => {
+      call += 1;
+      if (call === 1) throw new TypeError('network error');
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const client = new CreddaClient({
+      baseUrl: 'https://engine.example.com',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    const result = await client.createInvestigationOnce(
+      idempotentCreate({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' }),
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.status).toBe('REPLAYED');
+    expect(result.investigation).toEqual(body);
+  });
+
+  it('never retries the keyless create, whatever retries is set to', async () => {
+    const fetchImpl = stub({ error: { code: 'UNAVAILABLE', message: 'not now' } }, 503);
+    const client = new CreddaClient({
+      baseUrl: 'https://engine.example.com',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    await expect(
+      client.createInvestigation({ repositoryId: 'repo_1', issueTitle: 't', issueBody: 'b' }),
+    ).rejects.toMatchObject({ status: 503 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces the reused-key refusal as a 409 rather than a run the caller did not ask for', async () => {
+    const fetchImpl = stub({ error: { code: 'IDEMPOTENCY_KEY_REUSED', message: 'already used' } }, 409);
+    await expect(
+      clientWith(fetchImpl).createInvestigationOnce(
+        idempotentCreate({ repositoryId: 'repo_1', issueTitle: 'other', issueBody: 'b' }),
+      ),
+    ).rejects.toMatchObject({ status: 409, code: 'IDEMPOTENCY_KEY_REUSED' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('binds a key to one body: a new report gets a new key rather than reusing the old one', async () => {
+    const first = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 'one', issueBody: 'b' });
+    const second = idempotentCreate({ repositoryId: 'repo_1', issueTitle: 'two', issueBody: 'b' });
+    expect(second.key).not.toBe(first.key);
+    // The pair is frozen, so the body under a key cannot be edited in place.
+    expect(Object.isFrozen(first)).toBe(true);
+  });
+
+  it('refuses a key the engine would refuse, without spending a request to find out', () => {
+    expect(() => idempotencyKey('')).toThrow(TypeError);
+    expect(() => idempotencyKey('k'.repeat(256))).toThrow(TypeError);
+    expect(idempotencyKey('k'.repeat(255))).toHaveLength(255);
+    expect(newIdempotencyKey()).not.toBe(newIdempotencyKey());
   });
 
   it('opens one with a POST carrying exactly the fields createBody accepts', async () => {
@@ -95,11 +225,98 @@ describe('investigations', () => {
   });
 });
 
+describe('cancelling a run', () => {
+  it('posts to the cancel route with an empty body when no reason is given', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' });
+    await clientWith(fetchImpl).cancelInvestigation('inv_1');
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations/inv_1/cancel');
+    expect(initOf(fetchImpl).method).toBe('POST');
+    // `{}`, not `{"reason":undefined}` and not an absent body: `cancelBody` is
+    // strict, and the handler parses `{}` when nothing was sent.
+    expect(initOf(fetchImpl).body).toBe('{}');
+  });
+
+  it('sends the reason, and sends nothing else', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' });
+    await clientWith(fetchImpl).cancelInvestigation('inv_1', { reason: 'wrong repository' });
+    expect(initOf(fetchImpl).body).toBe('{"reason":"wrong repository"}');
+  });
+
+  it('keeps the AbortSignal out of the body', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' });
+    const controller = new AbortController();
+    await clientWith(fetchImpl).cancelInvestigation('inv_1', { signal: controller.signal });
+    expect(initOf(fetchImpl).body).toBe('{}');
+    expect(initOf(fetchImpl).signal).toBe(controller.signal);
+  });
+
+  it('escapes the id rather than building a path out of it', async () => {
+    const fetchImpl = stub({ investigationId: 'a/b', state: 'CANCELLED', status: 'CANCELLED' });
+    await clientWith(fetchImpl).cancelInvestigation('a/b');
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/investigations/a%2Fb/cancel');
+  });
+
+  /*
+   * THE POINT OF THE UNION. A 202 is a success at the transport level and must
+   * NOT be readable as "cancelled": a worker is still inside the run, holding a
+   * sandbox and spending a budget, and the API has written no terminal state.
+   * The body is returned intact, `state` is the run's real state, and narrowing
+   * on `status` is what tells the two apart.
+   */
+  it('returns 202 CANCELLATION_REQUESTED as itself, with the run still in its own state', async () => {
+    const fetchImpl = stub(
+      { investigationId: 'inv_1', state: 'ATTEMPTING_REPRODUCTION', status: 'CANCELLATION_REQUESTED' },
+      202,
+    );
+    const result = await clientWith(fetchImpl).cancelInvestigation('inv_1');
+    expect(result.status).toBe('CANCELLATION_REQUESTED');
+    expect(result.state).toBe('ATTEMPTING_REPRODUCTION');
+    expect(result.state).not.toBe('CANCELLED');
+  });
+
+  it('returns 200 ALREADY_CANCELLED rather than treating a repeat as an error', async () => {
+    const fetchImpl = stub({ investigationId: 'inv_1', state: 'CANCELLED', status: 'ALREADY_CANCELLED' }, 200);
+    const result = await clientWith(fetchImpl).cancelInvestigation('inv_1');
+    expect(result.status).toBe('ALREADY_CANCELLED');
+    expect(result.state).toBe('CANCELLED');
+  });
+
+  it('raises the 409 refusals with the code that says which refusal it was', async () => {
+    for (const code of ['ALREADY_FINISHED', 'NOT_CANCELLABLE']) {
+      const fetchImpl = stub({ error: { code, message: 'no' } }, 409);
+      await expect(clientWith(fetchImpl).cancelInvestigation('inv_1')).rejects.toMatchObject({
+        status: 409,
+        code,
+      });
+    }
+  });
+
+  it('is never retried, however many retries are configured', async () => {
+    const fetchImpl = stub({ error: { code: 'INTERNAL_ERROR', message: 'boom' } }, 503);
+    const client = new CreddaClient({
+      baseUrl: 'https://engine.example.com',
+      retries: 3,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    await expect(client.cancelInvestigation('inv_1')).rejects.toMatchObject({ status: 503 });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('repositories', () => {
   it('lists them', async () => {
     const fetchImpl = stub({ repositories: [], total: 0 });
     await clientWith(fetchImpl).listRepositories({ limit: 5 });
     expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/repositories?limit=5');
+  });
+
+  it('reads one by id and unwraps it, rather than paging the list to find it', async () => {
+    const repository = { id: 'repo_1', name: 'acme/api', source: 'https://github.com/acme/api.git' };
+    const fetchImpl = stub({ repository });
+    const result = await clientWith(fetchImpl).getRepository('repo_1');
+    expect(urlOf(fetchImpl)).toBe('https://engine.example.com/api/repositories/repo_1');
+    expect(result).toEqual(repository);
   });
 
   it('reads what has been learned about one, filtered by kind', async () => {
@@ -152,6 +369,22 @@ describe('validations', () => {
     await clientWith(fetchImpl).listValidations({ repository: 'repo_1', state: 'RUNNING', outcome: 'FAILED' });
     expect(urlOf(fetchImpl)).toBe(
       'https://engine.example.com/api/validations?repository=repo_1&state=RUNNING&outcome=FAILED',
+    );
+  });
+
+  it('narrows findings by severity and status, so triage need not pull every row', async () => {
+    const fetchImpl = stub({ findings: [], total: 0 });
+    await clientWith(fetchImpl).listFindings('val_1', { severity: 'HIGH', status: 'OPEN' });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://engine.example.com/api/validations/val_1/findings?severity=HIGH&status=OPEN',
+    );
+  });
+
+  it('filters validation evidence by type, the same filter the investigation route takes', async () => {
+    const fetchImpl = stub({ evidence: [], total: 0 });
+    await clientWith(fetchImpl).listValidationEvidence('val_1', { type: 'TEST_RESULT' });
+    expect(urlOf(fetchImpl)).toBe(
+      'https://engine.example.com/api/validations/val_1/evidence?type=TEST_RESULT',
     );
   });
 

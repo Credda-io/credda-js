@@ -1,0 +1,16 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability privately
+    url: https://github.com/Credda-io/credda-js/security/advisories/new
+    about: Do not open a public issue for something exploitable. See SECURITY.md.
+  - name: You got the retired reliability-score client
+    url: https://github.com/Credda-io/credda-js/blob/main/CHANGELOG.md
+    about: >
+      npm still serves 0.8.0, which is a different product. That is expected and
+      the README says so. Pin 0.8.0 if you depend on it; there is no upgrade path.
+  - name: What Credda is
+    url: https://credda.io
+    about: >
+      You label a bug report or a vulnerability, Credda reproduces it, diagnoses
+      it, and proves a patch with a test that fails before and passes after.
+      It proposes; it never merges.
