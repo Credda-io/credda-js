@@ -248,11 +248,16 @@ export const FILTER_VOCABULARIES: Readonly<Record<string, Readonly<Record<string
  */
 export const UNTYPED_FILTERS: Readonly<Record<string, string>> = {
   hasSignal:
-    'The wire vocabulary is ["true","false","1","0"] because a query string carries strings. The ' +
-    'client takes a TypeScript boolean and `queryString` serialises it, which is the same fact in ' +
-    'the type a caller already has; offering `"1"` as well would be four ways to say two.',
+    'NOT REACHABLE FROM THIS CLIENT AT ALL, which is a different fact from the one this entry ' +
+    'used to state. `ListInvestigationsQuery` and `ListResolutionsQuery` carry `signalId` -- WHICH ' +
+    'signal raised the run -- and no field for `hasSignal`, which asks WHETHER one did. So there ' +
+    'is no union to write and nothing to serialise: the filter is absent, not untyped. ' +
+    '`@credda/mcp-server` does take it as a boolean on both routes and `credda-go` states its own ' +
+    'absence in `api.go`; this client was the one saying it had a filter it does not have. ' +
+    'Recorded rather than built: adding the field is a capability decision, not a wording fix.',
   includeDebug:
-    'The wire vocabulary is ["true","false","1","0"] for the reason `hasSignal` gives: a query ' +
-    'string carries strings. The client takes a TypeScript boolean, and a union of the four ' +
-    'spellings would be a worse type than the one the language already has.',
+    'The wire vocabulary is ["true","false","1","0"] because a query string carries strings. The ' +
+    'client does take this one: `ListEventsQuery.includeDebug` is a TypeScript boolean and ' +
+    '`queryString` serialises it, which is the same fact in the type a caller already has, and a ' +
+    'union of the four spellings would be a worse type than the one the language already has.',
 };

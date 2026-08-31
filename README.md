@@ -384,8 +384,10 @@ actually carry — it is a default every call site overrides — and it is liste
 the type only so that removing an exported member does not break a build.
 
 Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
-re-attempts network errors and 502/504 with exponential backoff. `429` is not on
-that list because nothing in the API rate limits.
+re-attempts network errors and 502/503/504 with exponential backoff — `503` is
+the one the engine itself sends, as `TOO_MANY_STREAMS`. `429` is not on that
+list because nothing in the API rate limits; note that `credda-go` does retry it,
+on the grounds that a proxy in front of the engine can send one.
 
 Every GET is retried, and exactly one write: `createInvestigationOnce`, which
 carries an `Idempotency-Key` the engine deduplicates against, so a repeat

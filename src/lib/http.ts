@@ -29,7 +29,8 @@ export interface CreddaConfig {
    */
   apiKey?: string | undefined;
   /**
-   * Opt-in retries for transient failures (network errors, 502/504). `retries`
+   * Opt-in retries for transient failures (network errors, 502/503/504 --
+   * `isRetryableStatus` is the list, and 503 is on it). `retries`
    * is the number of RE-attempts; 0 is the default. Backoff is
    * `retryBaseMs * 2^n`, capped by `maxRetryDelayMs`.
    *
