@@ -5,7 +5,7 @@
   </a>
 </p>
 
-> Source mirror for [`@credda/js`](https://www.npmjs.com/package/@credda/js). Install from npm: `npm install @credda/js`. This repo provides the source and issue tracker; canonical development happens in Credda internal tooling.
+> Source mirror for [`@credda/js`](https://www.npmjs.com/package/@credda/js). **Do not install from npm yet:** the latest published version is **0.8.0**, the retired reliability-score client, so `npm install @credda/js` today gives you the product this page says is gone. The `1.0.0` described here is unpublished on purpose — see [RELEASE.md](RELEASE.md) and the warning below. This repo provides the source and issue tracker; canonical development happens in Credda internal tooling.
 
 # @credda/js
 

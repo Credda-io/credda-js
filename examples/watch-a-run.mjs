@@ -179,8 +179,9 @@ try {
   console.log(`\nThe run finished in ${terminal}.`);
   console.log(
     'READY_FOR_REVIEW means a patch and a test are waiting for a human. Credda\n' +
-      'opens the pull request on the GitHub App path, and on the Action path only\n' +
-      'when the caller set `open-pull-request`. It never merges one.',
+      'opens the pull request on the GitHub App path, with no flag and no switch.\n' +
+      'The Action path opens none: its `open-pull-request` input is declared on no\n' +
+      'version a caller can reach. It never merges one.',
   );
 } finally {
   server.close();
