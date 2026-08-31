@@ -28,8 +28,11 @@ pull request depends on which mechanism delivered it, and the two answer
 differently: the **GitHub App** path opens one with no flag and no switch, for a
 run that reaches `READY_FOR_REVIEW` with a proven verdict; the **GitHub Action**
 opens none unless you set its `open-pull-request` input, which defaults to
-`false`. How often a run reaches a proven fix at all has not been measured. It
-proposes and never merges.
+`false` -- and that input is declared on no version a caller can reach: it is
+absent from `action.yml` at the `v1` tag and on the action's default branch
+alike, so setting it today parses, runs green and delivers nothing. How often a
+run reaches a proven fix at all has not been measured. It proposes and never
+merges.
 
 **The Action has two modes, and the one above is the expensive half.**
 `mode: investigate` is what everything on this page describes: a labelled
