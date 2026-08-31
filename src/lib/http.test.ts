@@ -117,6 +117,64 @@ describe('Transport retries', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('re-attempt a 429 from the ingress in front of the engine', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(429, envelope('UNAVAILABLE', 'slow down')))
+      .mockResolvedValueOnce(json(200, { total: 0 }));
+    const transport = new Transport({ baseUrl: 'http://x', retries: 1, retryBaseMs: 0, fetch: fetchImpl as never });
+    await expect(transport.get('/api/investigations')).resolves.toEqual({ total: 0 });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('wait as long as Retry-After asked, rather than the exponential curve', async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(json(429, envelope('UNAVAILABLE', 'slow down'), { 'retry-after': '5' }))
+        .mockResolvedValueOnce(json(200, { total: 0 }));
+      const transport = new Transport({
+        baseUrl: 'http://x',
+        retries: 1,
+        // 10ms is what the curve alone would have waited. The header says 5s,
+        // and whatever set it knows when the window reopens.
+        retryBaseMs: 10,
+        maxRetryDelayMs: 30_000,
+        fetch: fetchImpl as never,
+      });
+      const promise = transport.get('/api/investigations');
+      await vi.advanceTimersByTimeAsync(10);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(4_990);
+      await expect(promise).resolves.toEqual({ total: 0 });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cap a Retry-After that runs to minutes at maxRetryDelayMs', async () => {
+    vi.useFakeTimers();
+    try {
+      // Without a ceiling this one header hangs the call for ten minutes.
+      const fetchImpl = vi.fn(async () => json(429, {}, { 'retry-after': '600' }));
+      const transport = new Transport({
+        baseUrl: 'http://x',
+        retries: 1,
+        retryBaseMs: 1,
+        maxRetryDelayMs: 25,
+        fetch: fetchImpl as never,
+      });
+      const promise = transport.get('/api/investigations').catch((e: unknown) => e);
+      await vi.advanceTimersByTimeAsync(25);
+      await promise;
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('cap the backoff at maxRetryDelayMs', async () => {
     vi.useFakeTimers();
     try {

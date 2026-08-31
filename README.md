@@ -265,11 +265,20 @@ Codes the API can send today: `INVALID_REQUEST`, `VALIDATION_FAILED`,
 `UNAVAILABLE`, `TOO_MANY_STREAMS`, `INTERNAL_ERROR`.
 
 Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
-re-attempts network errors and 502/504 on GETs with exponential backoff. `429`
-is not on that list because nothing in the API rate limits. `createInvestigation`
-is never retried whatever you set — the route defines no idempotency key, so a
-repeat would open a second investigation into the same report. `getHealth` is
-never retried either: a degraded database does not recover by being asked twice.
+re-attempts network errors and 429/502/503/504 on GETs with exponential backoff.
+The engine itself sends none of those four: they come from the ingress in front
+of your deployment, which is also what sets `Retry-After`. When that header is
+present it takes precedence over the curve, and both are capped by
+`maxRetryDelayMs` (5s by default) so a limiter naming a ten-minute window cannot
+hang the call for ten minutes. `CreddaError.retryAfterMs` carries what was read.
+
+This is the same list, the same precedence and the same ceiling as
+[`credda-go`](https://github.com/Credda-io/credda-go).
+
+`createInvestigation` is never retried whatever you set — the route defines no
+idempotency key, so a repeat would open a second investigation into the same
+report. `getHealth` is never retried either: a degraded database does not
+recover by being asked twice.
 
 ## Status of the fix path
 

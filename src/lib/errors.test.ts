@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreddaError, header, isRetryableStatus, toCreddaError } from './errors.js';
+import { CreddaError, header, isRetryableStatus, parseRetryAfter, toCreddaError } from './errors.js';
 
 /** A Response with a JSON body and headers, without needing a server. */
 function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
@@ -58,8 +58,13 @@ describe('isRetryableStatus', () => {
     expect(isRetryableStatus(504)).toBe(true);
   });
 
-  it('does not list 429: nothing in the engine API rate limits', () => {
-    expect(isRetryableStatus(429)).toBe(false);
+  it('lists 429, which is the ingress in front of the engine asking for a pause', () => {
+    // This asserted `false` until 2026-08-31, on the grounds that nothing in
+    // apps/api rate limits. True, and it never settled the question: the engine
+    // does not send 502 or 504 either, and both are above. All three come from
+    // the hop between the caller and the engine. The Go client has listed
+    // 429/502/503/504 since its rewrite; this is the two agreeing again.
+    expect(isRetryableStatus(429)).toBe(true);
   });
 
   it('never retries a refusal', () => {
@@ -74,5 +79,56 @@ describe('header', () => {
     // Hand-rolled test doubles do this, and a TypeError while BUILDING an error
     // would hide the failure that was actually being reported.
     expect(header({} as Response, 'x-request-id')).toBeNull();
+  });
+});
+
+describe('parseRetryAfter', () => {
+  const now = Date.parse('2026-08-31T12:00:00.000Z');
+
+  it('reads the delta-seconds form RFC 9110 permits', () => {
+    expect(parseRetryAfter('30', now)).toBe(30_000);
+    expect(parseRetryAfter('  30  ', now)).toBe(30_000);
+    expect(parseRetryAfter('0', now)).toBe(0);
+  });
+
+  it('reads the HTTP-date form, which a proxy may send instead', () => {
+    expect(parseRetryAfter('Mon, 31 Aug 2026 12:00:45 GMT', now)).toBe(45_000);
+  });
+
+  it('never returns a negative for a date already in the past', () => {
+    expect(parseRetryAfter('Mon, 31 Aug 2026 11:59:00 GMT', now)).toBe(0);
+  });
+
+  it('ignores what it cannot parse rather than guessing at it', () => {
+    // parseInt would read '30s' as 30. A header this client does not understand
+    // should fall back to the exponential curve, not to half of a reading.
+    for (const raw of [null, '', '   ', '30s', 'soon', '-5', '1.5']) {
+      expect(parseRetryAfter(raw, now)).toBe(0);
+    }
+  });
+});
+
+describe('CreddaError.retryAfterMs', () => {
+  it('carries a Retry-After the response sent', async () => {
+    const error = await toCreddaError(
+      new Response(JSON.stringify({ error: { code: 'UNAVAILABLE', message: 'slow down' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '12' },
+      }),
+      '/api/investigations',
+    );
+    expect(error.status).toBe(429);
+    expect(error.retryAfterMs).toBe(12_000);
+  });
+
+  it('is undefined when the response carried none, which is the engine itself', async () => {
+    const error = await toCreddaError(
+      new Response(JSON.stringify({ error: { code: 'NOT_FOUND', message: 'no' } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
+      '/api/investigations/inv_1',
+    );
+    expect(error.retryAfterMs).toBeUndefined();
   });
 });

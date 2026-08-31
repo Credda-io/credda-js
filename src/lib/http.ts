@@ -20,9 +20,14 @@ export interface CreddaConfig {
    */
   apiKey?: string | undefined;
   /**
-   * Opt-in retries for transient failures (network errors, 502/504). `retries`
-   * is the number of RE-attempts; 0 is the default. Backoff is
-   * `retryBaseMs * 2^n`, capped by `maxRetryDelayMs`.
+   * Opt-in retries for transient failures: network errors, and 429/502/503/504.
+   * `retries` is the number of RE-attempts; 0 is the default. Backoff is
+   * `retryBaseMs * 2^n`, or the server's own `Retry-After` when one was sent,
+   * capped by `maxRetryDelayMs` either way.
+   *
+   * The cap matters most for `Retry-After`: a rate limiter in front of the
+   * engine can name a window running to minutes, and without a ceiling one
+   * retry would hang the call for as long as that header says.
    *
    * GETs only. `createInvestigation` is a POST that creates a row and carries no
    * idempotency key — the API defines none — so it is never retried: a repeat
@@ -97,12 +102,26 @@ export class Transport {
     return this.fetchImpl(this.url(path), init);
   }
 
+  /**
+   * The wait before attempt `i` (1-based).
+   *
+   * A `Retry-After` on the previous failure wins over the exponential curve:
+   * whatever set it knows when the window reopens, and waiting less than it
+   * asked just earns the same answer again. Capped by `maxRetryDelayMs`
+   * regardless of which of the two produced it. Same rule, same precedence and
+   * same ceiling as `retryDelay` in the Go client.
+   */
+  private delayBefore(i: number, lastError: unknown): number {
+    const backoff = this.retryBaseMs * 2 ** (i - 1);
+    const asked = lastError instanceof CreddaError ? (lastError.retryAfterMs ?? 0) : 0;
+    return Math.min(this.maxDelayMs, asked > 0 ? asked : backoff);
+  }
+
   private async withRetries<T>(attempt: () => Promise<T>): Promise<T> {
     let lastError: unknown;
     for (let i = 0; i <= this.retries; i++) {
       if (i > 0) {
-        const delay = Math.min(this.maxDelayMs, this.retryBaseMs * 2 ** (i - 1));
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, this.delayBefore(i, lastError)));
       }
       try {
         return await attempt();

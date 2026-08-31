@@ -89,9 +89,19 @@ serializers, with the vocabularies (`InvestigationState`, `ValidationOutcome`,
   bearer key, scoped to an organisation rather than a person, that reads
   everything the organisation holds.
 - **The error body changed.** The engine answers `{ error: { code, message } }`.
-  `CreddaError` keeps `status`, `path`, `code` and `requestId`; `details` and
-  `retryAfterMs` are gone, because nothing in this API sends either.
-- **`429` is no longer treated as retryable** — nothing in the API rate limits.
+  `CreddaError` keeps `status`, `path`, `code`, `requestId` and `retryAfterMs`;
+  `details` is gone, because nothing in this API sends it.
+- **`429` is retryable, and `Retry-After` is honoured.** Both were dropped
+  earlier in this unreleased cycle on the reasoning that nothing in `apps/api`
+  rate limits. That is true of the engine and it never settled the question,
+  because the retry list already held the counter-example: the engine does not
+  answer 502 or 504 either, and both stayed. All three come from the hop between
+  the caller and the engine — Credda runs against a customer's own deployment,
+  behind the customer's own ingress, and that hop is the thing that rate limits.
+  The Go client has listed 429/502/503/504 and read `Retry-After` since its own
+  rewrite, so the two clients were answering the same wire differently for no
+  reason either repository stated. `Retry-After` takes precedence over the
+  exponential curve and is capped by `maxRetryDelayMs` like any other wait.
 - `package.json` `exports` now list `types` first in each condition block.
 
 ### Kept
