@@ -62,9 +62,37 @@ jobs:
       # starts what is about to be published. It ran on every pull request
       # and on no publish.
       - run: npm run example
+      # The publish token comes from SSM over OIDC rather than from an Actions
+      # secret.
+      #
+      # `NPM_TOKEN` was a Credda-io ORGANISATION secret with visibility `all`,
+      # so every repository in the org -- including public ones that run
+      # workflows over attacker-authored issue prose -- could reference the
+      # credential that publishes @credda/* to npm. Nothing enforced that only
+      # the three SDK repos used it; the scoping was a convention.
+      #
+      # `credda-github-publish` can read `/credda/release/*` and is explicitly
+      # denied every other parameter, and its trust policy names these three
+      # repositories on `refs/tags/v*` and `refs/heads/main` and nothing else.
+      # So a workflow in another repo cannot assume it even if it tries, which
+      # is the property the org secret could not have.
+      #
+      # `id-token: write` is already declared above for npm provenance, so this
+      # needs no new permission.
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5
+        with:
+          role-to-assume: arn:aws:iam::940031346042:role/credda-github-publish
+          aws-region: us-east-1
+      # Masked before it is exported. A value read at runtime is not a secret as
+      # far as Actions is concerned, so without `add-mask` it would appear in
+      # plain text the first time any later step echoed the environment.
+      - name: Read the npm publish token from SSM
+        run: |
+          TOKEN="$(aws ssm get-parameter --name /credda/release/NPM_TOKEN \
+            --with-decryption --query Parameter.Value --output text)"
+          echo "::add-mask::$TOKEN"
+          echo "NODE_AUTH_TOKEN=$TOKEN" >> "$GITHUB_ENV"
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-gpr:
     runs-on: ubuntu-latest
