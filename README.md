@@ -31,8 +31,7 @@ opens none unless you set its `open-pull-request` input, which defaults to
 `false` -- and that input is declared on no version a caller can reach: it is
 absent from `action.yml` at the `v1` tag and on the action's default branch
 alike, so setting it today parses, runs green and delivers nothing. How often a
-run reaches a proven fix at all has not been measured. It proposes and never
-merges.
+run reaches a proven fix at all has not been measured. It proposes. It never merges.
 
 **The Action has two modes, and the one above is the expensive half.**
 `mode: investigate` is what everything on this page describes: a labelled
