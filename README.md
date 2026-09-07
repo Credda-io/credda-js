@@ -140,9 +140,22 @@ used to be accepted and ignored.
 | `listInvestigationEvidence(id, { type, limit, offset })` | `GET /api/investigations/:id/evidence` |
 | `streamInvestigation(id, { since, reconnect })` | `GET /api/investigations/:id/stream` (SSE) |
 
-`createInvestigation` creates the row in state `CREATED` and returns. **It does
-not start the run** — the API does not execute anything; the worker does. What
-you watch it with is the event stream.
+`createInvestigation` creates the row in state `CREATED` and returns. By default
+it does **not** start the run. Pass **`start: true`** and the route queues the
+`run-investigation` job in the same transaction as the row, so the run begins
+without a second call; **`budget`** lowers that run's ceiling and is refused
+without `start`. The API still executes nothing itself — the worker does — and
+what you watch it with is the event stream.
+
+```ts
+await credda.createInvestigation({
+  repositoryId,
+  issueTitle: 'Checkout 500s when country is missing',
+  issueBody: report,
+  start: true,
+  budget: { maxCostUsd: 0.5 },
+});
+```
 
 #### Creating a run twice by accident costs money
 
