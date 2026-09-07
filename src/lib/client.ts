@@ -161,6 +161,46 @@ export interface CreateInvestigationInput {
   issueBody: string;
   /** 1–500 characters. The reporter's own reference, e.g. an issue URL. */
   issueRef?: string | undefined;
+  /**
+   * Queue the run in the same transaction as the row.
+   *
+   * Defaults to `false` server-side, which is why this SDK could omit it and
+   * still appear to work — and why omitting it was easy to miss. A caller who
+   * wanted a run got a row, no run, and no error.
+   */
+  start?: boolean | undefined;
+  /**
+   * A lower ceiling for the run this request queues.
+   *
+   * MEANINGFUL ONLY WITH `start`, and REFUSED without it rather than ignored.
+   * The engine says why: "A run this request does not queue has nothing to
+   * apply a ceiling to, and there is no column on `investigations` to remember
+   * one in — accepting the field would be storing nothing and answering 201."
+   *
+   * Every field is a maximum and each is capped at the engine's own default;
+   * asking for more than the default is a 400, not a raise.
+   */
+  budget?: InvestigationBudgetInput | undefined;
+}
+
+/**
+ * A ceiling on one run. Every field optional, every field a maximum.
+ *
+ * Mirrors `budgetBody` in the engine's route. `maxCostUsd` is the one field
+ * that is money rather than a count, and therefore not an integer — the engine
+ * says why: "a caller capping a run at fifty cents is the obvious thing to
+ * want".
+ */
+export interface InvestigationBudgetInput {
+  maxWallClockMs?: number | undefined;
+  maxModelCalls?: number | undefined;
+  maxTokens?: number | undefined;
+  maxToolCalls?: number | undefined;
+  maxCommandMs?: number | undefined;
+  maxSandboxMs?: number | undefined;
+  maxPatchAttempts?: number | undefined;
+  /** Dollars, not an integer. */
+  maxCostUsd?: number | undefined;
 }
 
 /** The body of `POST /api/investigations/{id}/cancel`. */
@@ -205,9 +245,16 @@ export class CreddaClient {
   /**
    * Opens an investigation into a reported failure.
    *
-   * The row is created in `CREATED` and this call returns as soon as it exists;
-   * the API does not run the engine. What advances it is the worker, and what a
-   * caller watches it with is {@link streamInvestigation}.
+   * The row is created in `CREATED` and this call returns as soon as it exists.
+   * The API still executes nothing itself — the worker does — but `start: true`
+   * queues the `run-investigation` job in the SAME TRANSACTION as the row, so
+   * the run begins without a second call. `budget` lowers that run's ceiling
+   * and is refused without `start`. What a caller watches it with is
+   * {@link streamInvestigation}.
+   *
+   * Both fields were missing from this SDK until 2026-09-06, and because
+   * `start` defaults to `false` server-side their absence looked like working
+   * code: a caller got a row, no run, and no error.
    *
    * Sends no `Idempotency-Key` and is never retried, whatever `retries` is set
    * to. Without that header the route behaves exactly as it did before the
