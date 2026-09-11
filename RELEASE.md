@@ -3,7 +3,7 @@
 ## The deprecation of 0.x — run this, and know why
 
 ```bash
-npm deprecate @credda/js@"<1.0.0" "Credda's reliability-score API is being retired and 0.x is its client. This package is being redefined for Credda's bug-and-vulnerability engine. Pin @credda/js@0.8.0 to stay on 0.x."
+npm deprecate @credda/js@"<1.0.0" "Credda's reliability-score API is retired and 0.x is its client; the routes it calls are gone. Credda is now a bug-and-vulnerability engine, delivered as the Credda GitHub Action and the credda CLI on npm. Pin @credda/js@0.8.0 to stay on 0.x."
 ```
 
 **Why the message does not say "upgrade to 1.0.0".** It is written to be true
