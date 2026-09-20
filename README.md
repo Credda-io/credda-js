@@ -50,12 +50,17 @@ are documented at [api.credda.io/reference](https://api.credda.io/reference).
 npm install @credda/js
 ```
 
-> **This installs 0.8.0 today — re-checked 2026-08-30.** The latest `@credda/js` on
-> npm is still **0.8.0**, the retired reliability-score client described in the
-> warning above. `1.0.0` — the version this repository contains and this README
-> documents — is **not published yet**. A bare `npm install @credda/js` therefore
-> gets you the wrong package. Until 1.0.0 ships, read this README as
-> documentation of the source in this repository rather than of what npm serves.
+> **This installs 0.8.0 today — re-checked 2026-09-20** with
+> `npm view @credda/js dist-tags`, which prints `latest: 0.8.0`. That is the
+> retired reliability-score client described in the warning above — its own
+> published keywords are still `trust`, `reliability-score`,
+> `verifiable-credentials`. `1.0.0` — the version this repository contains and
+> this README documents — is **not published yet**. A bare
+> `npm install @credda/js` therefore gets you the wrong package. It is
+> npm-deprecated, but with npm's generic boilerplate ("Package no longer
+> supported…"), which says nothing about the pivot; do not rely on that warning
+> to stop anyone. Until 1.0.0 ships, read this README as documentation of the
+> source in this repository rather than of what npm serves.
 
 ## Two entry points
 
