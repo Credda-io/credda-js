@@ -3,8 +3,13 @@
  *
  * A customer labels a defect or vulnerability; Credda reproduces it, diagnoses
  * the cause, and — see the README's status table for what the API serves
- * today — writes the patch and the test that proves it. Delivering that as a
- * pull request is opt-in and off by default. This package reads that engine.
+ * today — writes the patch and the test that proves it. On the engine's own
+ * GitHub App path that delivery has no flag and no opt-in switch: the gate is
+ * the state and the verdict. (The off-by-default `open-pull-request` input
+ * belongs to the GitHub Action, a different mechanism that runs on the
+ * caller's runner. The README's "Status of the fix path" retracted the
+ * conflation of the two on 2026-08-29; this comment had kept it.) This package
+ * reads that engine.
  *
  * Everything in `@credda/js/headless` is re-exported here, plus the provider
  * and hooks, which need React.

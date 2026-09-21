@@ -54,7 +54,8 @@ Everything below is gone, with no replacement:
 - All ~200 trust-domain types exported from `lib/client.ts`.
 
 `test/` for all of the above went with it, and was replaced rather than deleted:
-the suite is 93 tests over the new surface.
+the suite is 149 tests over the new surface, across 8 files (`npm test`,
+measured 2026-09-20; it read 93 when this line was first written).
 
 ### Added
 
@@ -154,13 +155,28 @@ React as an optional peer dependency.
 Neither of these is a principle. Both are statuses with a date, and both move
 when the API does:
 
-- **No pull-request method.** No route serves one. Opening a pull request needs
-  repository write permissions today's install does not request.
+- **No pull-request method, as of 2026-08-28.** No route serves one, and that
+  half has not changed. The second half of this bullet used to read "Opening a
+  pull request needs repository write permissions today's install does not
+  request", and that is no longer true: the engine's GitHub App asks an
+  operator for Contents write and Pull requests write, and its delivery path
+  uses them for a run that reaches a proven verdict. What is missing is the
+  *route*, not the permission. That delivery is also not opt-in and carries no
+  flag -- the off-by-default `open-pull-request` input belongs to the GitHub
+  Action, which is a different mechanism. See "Status of the fix path" in the
+  README, which corrected both points on 2026-08-28 and 2026-08-29 while this
+  entry kept the retracted wording.
 - **`patches`, `verifications` and `resolution.fix` are typed and served, and
-  empty on every run so far.** The patch path is gated on a model-backed
-  provider being configured (ADR 0018, condition 1). As of August 2026 no such
-  run exists, so `fix` is `null` and the gap is named in
-  `confidence.notEstablished` rather than filled in.
+  are `null` or empty on a run that did not enter the patch stage.** This
+  bullet read "empty on every run so far ... As of August 2026 no such run
+  exists" until 2026-09-20. That was measured and true when written; it is not
+  now. A model-backed run happened on 2026-08-27 and ADR 0019 put the Fixer and
+  the Verifier back on the investigation path the same day. The fields fill in
+  when the engine runs the patch path, which is gated on a model-backed
+  provider being configured. How often a run reaches a proven fix has not been
+  measured, and no count is claimed. Unchanged is the rule the old sentence was
+  written for: a stage that did not run is never reported as a measured zero,
+  so the gap is named in `confidence.notEstablished` rather than filled in.
 
 ---
 
