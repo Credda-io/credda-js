@@ -53,9 +53,41 @@ export interface CreddaConfig {
   retries?: number | undefined;
   retryBaseMs?: number | undefined;
   maxRetryDelayMs?: number | undefined;
+  /**
+   * Milliseconds before a request is aborted. Defaults to
+   * {@link DEFAULT_TIMEOUT_MS}; 0 disables the deadline.
+   *
+   * There was no deadline at all until this field existed, and `fetch` has none
+   * of its own. A deployment that accepted the connection and then stopped
+   * answering -- a wedged worker, a half-open connection a laptop carried
+   * between networks, an ingress holding the request -- left the returned
+   * promise pending forever, with nothing in this package that would ever
+   * settle it. The Go client has given its `*http.Client` a 30s timeout since
+   * its rewrite (`NewClient` in client.go), so the two clients also disagreed
+   * about the same wire.
+   *
+   * It applies to the JSON and text methods here and NOT to {@link raw}, which
+   * is what the event stream reads: an SSE connection is meant to stay open for
+   * longer than any request deadline, and the same carve-out is why the Go
+   * client's docs tell a streaming caller to pass their own `*http.Client`.
+   *
+   * A timed-out request is retryable, matching `retryable` in the Go client,
+   * which repeats any transport failure. With the default `retries` of 0 that
+   * means one attempt and one error.
+   */
+  timeoutMs?: number | undefined;
   /** Swappable for tests and for runtimes that supply their own fetch. */
   fetch?: typeof fetch | undefined;
 }
+
+/**
+ * The default request deadline, in milliseconds. 30s, the same value
+ * `NewClient` gives the Go client's `*http.Client`.
+ */
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
+/** The `code` on the {@link CreddaError} a deadline produces. Not a server code. */
+export const TIMEOUT_CODE = 'TIMEOUT';
 
 /** Values a query parameter may take. `undefined` means "do not send it". */
 export type QueryValue = string | number | boolean | undefined;
@@ -87,6 +119,7 @@ export class Transport {
   private readonly retryBaseMs: number;
   private readonly maxDelayMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
 
   constructor(config: CreddaConfig) {
     if (typeof config.baseUrl !== 'string' || config.baseUrl.trim() === '') {
@@ -100,6 +133,7 @@ export class Transport {
     this.retries = Math.max(0, Math.floor(config.retries ?? 0));
     this.retryBaseMs = config.retryBaseMs ?? 300;
     this.maxDelayMs = Math.max(0, config.maxRetryDelayMs ?? 5_000);
+    this.timeoutMs = Math.max(0, config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
     this.fetchImpl = config.fetch ?? globalThis.fetch;
     if (typeof this.fetchImpl !== 'function') {
       throw new TypeError('credda: no fetch available; pass one via config.fetch');
@@ -134,6 +168,60 @@ export class Transport {
     return Math.min(this.maxDelayMs, asked > 0 ? asked : backoff);
   }
 
+
+  /**
+   * Runs one attempt under the configured deadline.
+   *
+   * The controller is per-attempt, and `run` covers the body read as well as
+   * the response headers: a server that answers and then stalls mid-body is the
+   * same hang as one that never answers, and a timer cleared when `fetch`
+   * resolved would have left exactly that case unbounded.
+   *
+   * The caller's own `signal` is chained onto the same controller rather than
+   * replaced, so an abort the caller asked for still surfaces as an AbortError
+   * and is still never retried, while a deadline this client imposed surfaces
+   * as a CreddaError that says how long it waited.
+   */
+  private async withDeadline<T>(
+    path: string,
+    callerSignal: AbortSignal | undefined,
+    run: (signal: AbortSignal | undefined) => Promise<T>,
+  ): Promise<T> {
+    if (this.timeoutMs === 0) return run(callerSignal);
+
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort();
+    if (callerSignal !== undefined) {
+      if (callerSignal.aborted) controller.abort();
+      else callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+    }
+    let expired = false;
+    const timer = setTimeout(() => {
+      expired = true;
+      controller.abort();
+    }, this.timeoutMs);
+
+    try {
+      return await run(controller.signal);
+    } catch (error) {
+      if (expired) {
+        throw new CreddaError(
+          0,
+          `the request to ${path} was not answered within ${String(this.timeoutMs)}ms; ` +
+            'check that the deployment at ' +
+            this.baseUrl +
+            ' is reachable, or raise `timeoutMs` if this call is expected to be slow',
+          path,
+          { code: TIMEOUT_CODE },
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      callerSignal?.removeEventListener('abort', abortFromCaller);
+    }
+  }
+
   private async withRetries<T>(attempt: () => Promise<T>): Promise<T> {
     let lastError: unknown;
     for (let i = 0; i <= this.retries; i++) {
@@ -146,7 +234,10 @@ export class Transport {
         lastError = error;
         // An AbortError is the caller's own decision and is never retried.
         if (error instanceof Error && error.name === 'AbortError') throw error;
-        const transient = !(error instanceof CreddaError) || isRetryableStatus(error.status);
+        const transient =
+          !(error instanceof CreddaError) ||
+          error.code === TIMEOUT_CODE ||
+          isRetryableStatus(error.status);
         if (!transient) throw error;
       }
     }
@@ -154,14 +245,16 @@ export class Transport {
   }
 
   async get<T>(path: string, options: RequestOptions = {}): Promise<T> {
-    return this.withRetries(async () => {
-      const res = await this.raw(path, {
-        headers: this.headers(),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      });
-      if (!res.ok) throw await toCreddaError(res, path);
-      return (await res.json()) as T;
-    });
+    return this.withRetries(() =>
+      this.withDeadline(path, options.signal, async (signal) => {
+        const res = await this.raw(path, {
+          headers: this.headers(),
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (!res.ok) throw await toCreddaError(res, path);
+        return (await res.json()) as T;
+      }),
+    );
   }
 
   /**
@@ -173,24 +266,28 @@ export class Transport {
    * is correct — a degraded database does not become ready by asking twice.
    */
   async getAllowing<T>(path: string, allowStatus: number, options: RequestOptions = {}): Promise<T> {
-    const res = await this.raw(path, {
-      headers: this.headers(),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    return this.withDeadline(path, options.signal, async (signal) => {
+      const res = await this.raw(path, {
+        headers: this.headers(),
+        ...(signal === undefined ? {} : { signal }),
+      });
+      if (!res.ok && res.status !== allowStatus) throw await toCreddaError(res, path);
+      return (await res.json()) as T;
     });
-    if (!res.ok && res.status !== allowStatus) throw await toCreddaError(res, path);
-    return (await res.json()) as T;
   }
 
   /** A GET returning text. `/api/metrics` serves Prometheus exposition, not JSON. */
   async getText(path: string, options: RequestOptions = {}): Promise<string> {
-    return this.withRetries(async () => {
-      const res = await this.raw(path, {
-        headers: this.headers(),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      });
-      if (!res.ok) throw await toCreddaError(res, path);
-      return res.text();
-    });
+    return this.withRetries(() =>
+      this.withDeadline(path, options.signal, async (signal) => {
+        const res = await this.raw(path, {
+          headers: this.headers(),
+          ...(signal === undefined ? {} : { signal }),
+        });
+        if (!res.ok) throw await toCreddaError(res, path);
+        return res.text();
+      }),
+    );
   }
 
   /** Never retried. See `CreddaConfig.retries`. */
@@ -227,16 +324,18 @@ export class Transport {
     key: IdempotencyKey | undefined,
     options: RequestOptions,
   ): Promise<{ status: number; body: T }> {
-    const res = await this.raw(path, {
-      method: 'POST',
-      headers: this.headers({
-        'Content-Type': 'application/json',
-        ...(key === undefined ? {} : { [IDEMPOTENCY_HEADER]: key }),
-      }),
-      body: JSON.stringify(body),
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    return this.withDeadline(path, options.signal, async (signal) => {
+      const res = await this.raw(path, {
+        method: 'POST',
+        headers: this.headers({
+          'Content-Type': 'application/json',
+          ...(key === undefined ? {} : { [IDEMPOTENCY_HEADER]: key }),
+        }),
+        body: JSON.stringify(body),
+        ...(signal === undefined ? {} : { signal }),
+      });
+      if (!res.ok) throw await toCreddaError(res, path);
+      return { status: res.status, body: (await res.json()) as T };
     });
-    if (!res.ok) throw await toCreddaError(res, path);
-    return { status: res.status, body: (await res.json()) as T };
   }
 }

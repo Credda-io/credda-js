@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CreddaError } from './errors.js';
-import { Transport, queryString } from './http.js';
+import { DEFAULT_TIMEOUT_MS, TIMEOUT_CODE, Transport, queryString } from './http.js';
 
 function json(status: number, body: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
@@ -299,5 +299,126 @@ describe('Transport.getText', () => {
     const fetchImpl = vi.fn(async () => new Response(exposition, { status: 200 }));
     const transport = new Transport({ baseUrl: 'http://x', fetch: fetchImpl as never });
     await expect(transport.getText('/api/metrics')).resolves.toBe(exposition);
+  });
+});
+
+describe('Transport deadline', () => {
+  /*
+   * WHY THIS EXISTS. There was no deadline on any request until 2026-09-20 and
+   * `fetch` supplies none of its own, so a deployment that accepted the
+   * connection and then stopped answering left the returned promise pending
+   * forever -- nothing in this package would ever settle it, and a caller
+   * without their own AbortSignal had no way out. The Go client has given its
+   * `*http.Client` a 30s timeout since its rewrite.
+   */
+  const hang = () =>
+    vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          );
+        }),
+    );
+
+  it('defaults to 30s, the same as the Go client', () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(30_000);
+  });
+
+  it('sends a signal on every request even when the caller supplied none', async () => {
+    const fetchImpl = vi.fn(async () => json(200, {}));
+    const transport = new Transport({ baseUrl: 'http://x', fetch: fetchImpl as never });
+    await transport.get('/api/health');
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(init.signal, 'no signal means nothing can ever abort the request').toBeInstanceOf(AbortSignal);
+  });
+
+  it('aborts a request that outlives the deadline and says what to do about it', async () => {
+    const fetchImpl = hang();
+    const transport = new Transport({ baseUrl: 'http://engine.example', timeoutMs: 20, fetch: fetchImpl as never });
+    const error = (await transport.get('/api/investigations').catch((e: unknown) => e)) as CreddaError;
+    expect(error).toBeInstanceOf(CreddaError);
+    expect(error.code).toBe(TIMEOUT_CODE);
+    // A deadline the reader cannot act on is no better than the hang it replaced.
+    expect(error.message).toContain('20ms');
+    expect(error.message).toContain('http://engine.example');
+    expect(error.message).toContain('timeoutMs');
+  });
+
+  it('covers the body read, not just the response headers', async () => {
+    // A server that answers and then stalls mid-body is the same hang, and a
+    // timer cleared when `fetch` resolved would have left it unbounded.
+    const fetchImpl = vi.fn(
+      async (_url: string, init: RequestInit) =>
+        ({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () =>
+                reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+              );
+            }),
+        }) as unknown as Response,
+    );
+    const transport = new Transport({ baseUrl: 'http://x', timeoutMs: 20, fetch: fetchImpl as never });
+    const error = (await transport.get('/api/health').catch((e: unknown) => e)) as CreddaError;
+    expect(error.code).toBe(TIMEOUT_CODE);
+  });
+
+  it('applies to a POST as well as a GET', async () => {
+    const fetchImpl = hang();
+    const transport = new Transport({ baseUrl: 'http://x', timeoutMs: 20, fetch: fetchImpl as never });
+    const error = (await transport.post('/api/investigations', {}).catch((e: unknown) => e)) as CreddaError;
+    expect(error.code).toBe(TIMEOUT_CODE);
+  });
+
+  it('applies to the health route, which is exempt from retries and not from this', async () => {
+    const fetchImpl = hang();
+    const transport = new Transport({ baseUrl: 'http://x', timeoutMs: 20, fetch: fetchImpl as never });
+    const error = (await transport.getAllowing('/api/health', 503).catch((e: unknown) => e)) as CreddaError;
+    expect(error.code).toBe(TIMEOUT_CODE);
+  });
+
+  it('is retried like any other transport failure, matching the Go client', async () => {
+    const fetchImpl = hang();
+    const transport = new Transport({
+      baseUrl: 'http://x',
+      timeoutMs: 10,
+      retries: 2,
+      retryBaseMs: 0,
+      fetch: fetchImpl as never,
+    });
+    await expect(transport.get('/api/health')).rejects.toMatchObject({ code: TIMEOUT_CODE });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports the caller's own abort as an AbortError, never as a deadline", async () => {
+    const controller = new AbortController();
+    const fetchImpl = hang();
+    const transport = new Transport({ baseUrl: 'http://x', timeoutMs: 60_000, fetch: fetchImpl as never });
+    const pending = transport.get('/api/health', { signal: controller.signal });
+    controller.abort();
+    const error = (await pending.catch((e: unknown) => e)) as Error;
+    expect(error.name).toBe('AbortError');
+    expect(error).not.toBeInstanceOf(CreddaError);
+  });
+
+  it('leaves a request unbounded only when a caller asks for it', async () => {
+    const fetchImpl = vi.fn(async () => json(200, {}));
+    const transport = new Transport({ baseUrl: 'http://x', timeoutMs: 0, fetch: fetchImpl as never });
+    await transport.get('/api/health');
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
+    expect(init.signal).toBeUndefined();
+  });
+
+  it('does not reach the event stream, which is meant to stay open', async () => {
+    // `raw` is what streamSse reads. A 30s deadline on it would cut a healthy
+    // stream at 30s, every time.
+    const fetchImpl = vi.fn(async () => json(200, {}));
+    const transport = new Transport({ baseUrl: 'http://x', timeoutMs: 10, fetch: fetchImpl as never });
+    await transport.raw('/api/investigations/inv_1/stream');
+    const init = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit | undefined])[1];
+    expect(init?.signal).toBeUndefined();
   });
 });

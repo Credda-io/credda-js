@@ -400,6 +400,17 @@ they appear nowhere else. The type union also carries `UNAVAILABLE`, which no re
 actually carry — it is a default every call site overrides — and it is listed in
 the type only so that removing an exported member does not break a build.
 
+Every request carries a **deadline**, 30s by default and settable with
+`timeoutMs` (0 disables it). `fetch` has no timeout of its own, so before this
+existed a deployment that accepted the connection and then stopped answering
+left the returned promise pending forever. The deadline covers the response
+body as well as the headers, and a request that outlives it rejects with a
+`CreddaError` whose `code` is `TIMEOUT` — a client-side code, not one the
+engine sends. It does **not** apply to `streamEvents`: an SSE connection is
+meant to stay open for longer than any request deadline. 30s is the same
+default `credda-go` gives its `*http.Client`, and a timed-out request is
+retried on the same terms as any other transport failure.
+
 Retries are **opt-in and off by default**: `new CreddaClient({ …, retries: 2 })`
 re-attempts network errors and 429/502/503/504 with exponential backoff. `503`
 is the one the engine itself sends, as `TOO_MANY_STREAMS`; the other three come

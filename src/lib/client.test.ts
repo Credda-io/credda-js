@@ -247,7 +247,31 @@ describe('cancelling a run', () => {
     const controller = new AbortController();
     await clientWith(fetchImpl).cancelInvestigation('inv_1', { signal: controller.signal });
     expect(initOf(fetchImpl).body).toBe('{}');
-    expect(initOf(fetchImpl).signal).toBe(controller.signal);
+    // The request now carries a signal DERIVED from the caller's, because the
+    // transport chains its own deadline onto it (`withDeadline` in http.ts).
+    // Identity is therefore the wrong thing to assert; what has to hold is that
+    // the caller's abort still reaches the request.
+    const sent = initOf(fetchImpl).signal as AbortSignal;
+    expect(sent).toBeInstanceOf(AbortSignal);
+    expect(sent.aborted).toBe(false);
+  });
+
+  it("propagates the caller's abort to the signal the request carries", async () => {
+    // The listener is removed once the call settles -- it must not outlive the
+    // request -- so the abort has to be observed while the request is in
+    // flight, which is the only moment at which it means anything.
+    const controller = new AbortController();
+    let abortedInFlight: boolean | null = null;
+    const fetchImpl = (async (_url: string, init: RequestInit) => {
+      controller.abort();
+      abortedInFlight = init.signal?.aborted ?? null;
+      return new Response(JSON.stringify({ investigationId: 'inv_1', state: 'CANCELLED', status: 'CANCELLED' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    await clientWith(fetchImpl).cancelInvestigation('inv_1', { signal: controller.signal });
+    expect(abortedInFlight, "the caller's abort did not reach the request").toBe(true);
   });
 
   it('escapes the id rather than building a path out of it', async () => {
