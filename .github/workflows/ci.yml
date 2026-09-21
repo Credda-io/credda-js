@@ -55,7 +55,17 @@ jobs:
       # GitHub's own secret scanning and push protection are not enabled on this
       # repo, so the scan runs here instead. The gitleaks container is used
       # directly rather than gitleaks-action, which needs an org licence key.
+      # PINNED BY DIGEST, and `:latest` is why.
+      #
+      # This step used to pull `zricethezav/gitleaks:latest`, so the ruleset
+      # this gate enforces changed whenever upstream published, with no commit
+      # in this repository and nothing to bisect. That is the same class as an
+      # unpinned action: the check does not mean the same thing on two runs of
+      # the same tree. The digest below is the multi-arch index for v8.30.1,
+      # resolved 2026-09-21; `detect --source` is still the supported spelling
+      # at that version (verified by running it). Bump it deliberately.
       - name: Scan the full history for committed secrets
         run: |
-          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+          docker run --rm -v "$PWD:/repo" \
+            zricethezav/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
             detect --source=/repo --redact --no-banner --verbose
