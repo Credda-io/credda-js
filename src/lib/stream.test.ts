@@ -178,6 +178,37 @@ describe('streamSse', () => {
     expect(fetchImpl.mock.calls[1]![0]).toBe('http://x/s?since=4');
   });
 
+  it('does not consume the connection past an idle frame; it reconnects from the cursor', async () => {
+    // `idle` means the server dropped this stream. Anything the same connection
+    // emits afterwards must not be delivered as if the stream were live: the
+    // documented contract is that idle ends the pass and the run continues on a
+    // fresh request resuming from the cursor. Pre-fix, `break` left only the
+    // inner frames loop, so a post-idle frame on the same connection was yielded
+    // (received [4, 9]) and the reconnect resumed from 9, not 4.
+    let call = 0;
+    const fetchImpl = vi.fn(async (_url: string, _init?: RequestInit) => {
+      call += 1;
+      if (call === 1) {
+        return sseResponse([
+          frame(4, 'A', { sequence: 4 }),
+          'event: idle\ndata: {"reason":"no events for five minutes"}\n\n',
+          frame(9, 'LATE', { sequence: 9 }),
+        ]);
+      }
+      return sseResponse([frame(5, 'B', { sequence: 5 })]);
+    });
+    const received: Array<{ sequence: number }> = [];
+    for await (const event of streamSse<{ sequence: number }>(transport(fetchImpl), '/s', {
+      reconnect: true,
+      reconnectDelayMs: 0,
+    })) {
+      received.push(event);
+      if (received.length === 2) break;
+    }
+    expect(received.map((e) => e.sequence)).toEqual([4, 5]);
+    expect(fetchImpl.mock.calls[1]![0]).toBe('http://x/s?since=4');
+  });
+
   it('turns the revocation frame into a 401, the same answer the gate gives', async () => {
     const fetchImpl = vi.fn(async () =>
       sseResponse([

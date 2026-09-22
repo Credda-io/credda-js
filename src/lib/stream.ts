@@ -160,7 +160,7 @@ export async function* streamSse<T>(
     const reader = res.body.getReader();
     const text = new TextDecoder();
     try {
-      for (;;) {
+      reader: for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         for (const frame of decoder.push(text.decode(value, { stream: true }))) {
@@ -182,8 +182,12 @@ export async function* streamSse<T>(
             return;
           }
           // The server dropped a quiet stream. The run has NOT finished, so
-          // this ends one pass and `reconnect` resumes from the same cursor.
-          if (frame.event === 'idle') break;
+          // this ends the whole pass (the reader loop, not just this chunk's
+          // frames) and `reconnect` resumes from the same cursor. Breaking only
+          // the inner loop would keep consuming the connection the server
+          // declared dropped -- masked today because the server closes right
+          // after `idle`, but a latent bug the moment it does not.
+          if (frame.event === 'idle') break reader;
           const sequence = Number(frame.id);
           if (Number.isInteger(sequence) && sequence > since) since = sequence;
           yield JSON.parse(frame.data) as T;
