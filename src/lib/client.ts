@@ -35,6 +35,7 @@ import type {
   FindingPage,
   FindingSeverity,
   FindingStatus,
+  CheckStatus,
   Health,
   InvestigationDetail,
   InvestigationEvent,
@@ -93,6 +94,16 @@ export interface ListInvestigationsQuery extends PageQuery {
    * -- walking `/api/resolutions` shows only the runs that produced a record.
    */
   signalId?: string | undefined;
+  /**
+   * Whether the run was raised by any reported failure at all -- the question
+   * `signalId` cannot ask, which names one specific signal. `true` is every run
+   * a signal caused; `false` is every run nothing raised. With `limit: 1` the
+   * `total` beside the page is the exact org-wide count in one call.
+   *
+   * Cannot be combined with `signalId`: the route refuses the pair (400), since
+   * a named signal already answers "has a signal". Send one or the other.
+   */
+  hasSignal?: boolean | undefined;
 }
 
 export interface ListEventsQuery extends RequestOptions {
@@ -132,6 +143,15 @@ export interface ListValidationsQuery extends PageQuery {
   outcome?: ValidationOutcome | undefined;
 }
 
+export interface ListValidationChecksQuery extends PageQuery {
+  /**
+   * One check status out of `CHECK_STATUSES`, matched exactly (never a list).
+   * The route counts `total` under the filter, so `status: 'FAILED'` with
+   * `limit: 1` gives the exact number of failed checks without pulling the plan.
+   */
+  status?: CheckStatus | undefined;
+}
+
 export interface ListResolutionsQuery extends PageQuery {
   investigation?: string | undefined;
   /**
@@ -140,6 +160,13 @@ export interface ListResolutionsQuery extends PageQuery {
    * An unknown one is a 404, never an empty page.
    */
   signalId?: string | undefined;
+  /**
+   * Whether the resolution names a signal at all -- the question `signalId`
+   * cannot ask. `true` is every record a signal raised; `false` is every record
+   * that named none. With `limit: 1` the `total` is the exact count under the
+   * filter. Cannot be combined with `signalId`: the route refuses the pair (400).
+   */
+  hasSignal?: boolean | undefined;
   confidence?: ResolutionConfidenceClass | undefined;
 }
 
@@ -235,9 +262,9 @@ export class CreddaClient {
    * their full sets throughout; this one did not.
    */
   listInvestigations(query: ListInvestigationsQuery = {}): Promise<InvestigationListPage> {
-    const { repository, state, outcome, signalId, limit, offset, ...options } = query;
+    const { repository, state, outcome, signalId, hasSignal, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/investigations${queryString({ repository, state, outcome, signal: signalId, limit, offset })}`,
+      `/api/investigations${queryString({ repository, state, outcome, signal: signalId, hasSignal, limit, offset })}`,
       options,
     );
   }
@@ -450,9 +477,9 @@ export class CreddaClient {
    * with itself — every record where nothing was verified.
    */
   listResolutions(query: ListResolutionsQuery = {}): Promise<ResolutionListPage> {
-    const { investigation, signalId, confidence, limit, offset, ...options } = query;
+    const { investigation, signalId, hasSignal, confidence, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/resolutions${queryString({ investigation, signal: signalId, confidence, limit, offset })}`,
+      `/api/resolutions${queryString({ investigation, signal: signalId, hasSignal, confidence, limit, offset })}`,
       options,
     );
   }
@@ -493,10 +520,10 @@ export class CreddaClient {
   }
 
   /** The plan, in sequence order. `baseStatus` is what separates cause from coincidence. */
-  listValidationChecks(id: string, query: PageQuery = {}): Promise<ValidationCheckPage> {
-    const { limit, offset, ...options } = query;
+  listValidationChecks(id: string, query: ListValidationChecksQuery = {}): Promise<ValidationCheckPage> {
+    const { status, limit, offset, ...options } = query;
     return this.transport.get(
-      `/api/validations/${encodeURIComponent(id)}/checks${queryString({ limit, offset })}`,
+      `/api/validations/${encodeURIComponent(id)}/checks${queryString({ status, limit, offset })}`,
       options,
     );
   }
